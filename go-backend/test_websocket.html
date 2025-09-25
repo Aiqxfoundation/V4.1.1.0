@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test Client</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+        }
+        h1 { color: #0ff; }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: #000;
+            border: 1px solid #0f0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .log {
+            height: 400px;
+            overflow-y: auto;
+            background: #111;
+            border: 1px solid #333;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #0f0;
+            background: rgba(0,255,0,0.05);
+        }
+        .error { border-color: #f00; background: rgba(255,0,0,0.05); color: #f00; }
+        .info { border-color: #0ff; background: rgba(0,255,255,0.05); color: #0ff; }
+        button {
+            background: #0f0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background: #0ff; }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #0f0;
+            background: rgba(0,255,0,0.1);
+        }
+        .disconnected { border-color: #f00; background: rgba(255,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <h1>🚀 WebSocket Mining Test Client</h1>
+    
+    <div class="status" id="status">
+        Status: <span id="connectionStatus">Disconnected</span> | 
+        Server: <span id="serverUrl">ws://localhost:8080/api/ws</span>
+    </div>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>Controls</h2>
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+            <button onclick="sendPing()">Send Ping</button>
+            <button onclick="requestStatus()">Request Status</button>
+            <button onclick="clearLog()">Clear Logs</button>
+            
+            <h3>Connection Info</h3>
+            <div id="connectionInfo">
+                <p>Ready State: <span id="readyState">-</span></p>
+                <p>Messages Received: <span id="messageCount">0</span></p>
+                <p>Last Message: <span id="lastMessage">-</span></p>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>Mining Info</h2>
+            <div id="miningInfo">
+                <p>Current Block: <span id="currentBlock">-</span></p>
+                <p>Block Reward: <span id="blockReward">-</span></p>
+                <p>Total Hashrate: <span id="totalHashrate">-</span></p>
+                <p>Active Miners: <span id="activeMiners">-</span></p>
+                <p>Next Block: <span id="nextBlock">-</span></p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h2>Message Log</h2>
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let messageCount = 0;
+        
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            const connectionStatus = document.getElementById('connectionStatus');
+            
+            if (connected) {
+                status.classList.remove('disconnected');
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.style.color = '#0f0';
+            } else {
+                status.classList.add('disconnected');
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.style.color = '#f00';
+            }
+            
+            updateReadyState();
+        }
+        
+        function updateReadyState() {
+            const readyStateEl = document.getElementById('readyState');
+            if (!ws) {
+                readyStateEl.textContent = 'No WebSocket';
+                return;
+            }
+            
+            const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+            readyStateEl.textContent = states[ws.readyState] || 'UNKNOWN';
+        }
+        
+        function log(message, type = 'message') {
+            const logDiv = document.getElementById('log');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type}`;
+            msgDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.insertBefore(msgDiv, logDiv.firstChild);
+            
+            // Keep only last 100 messages
+            while (logDiv.children.length > 100) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+        
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected', 'info');
+                return;
+            }
+            
+            const url = 'ws://localhost:8080/api/ws';
+            log(`Connecting to ${url}...`, 'info');
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = () => {
+                    log('WebSocket connected!', 'info');
+                    updateStatus(true);
+                };
+                
+                ws.onmessage = (event) => {
+                    messageCount++;
+                    document.getElementById('messageCount').textContent = messageCount;
+                    document.getElementById('lastMessage').textContent = new Date().toLocaleTimeString();
+                    
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`Received: ${JSON.stringify(data, null, 2)}`);
+                        
+                        // Handle different message types
+                        if (data.type === 'block_update') {
+                            handleBlockUpdate(data.data);
+                        } else if (data.type === 'user_mining_update') {
+                            handleUserUpdate(data.data);
+                        } else if (data.type === 'pong') {
+                            log('Pong received!', 'info');
+                        }
+                    } catch (e) {
+                        log(`Raw message: ${event.data}`);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    log(`WebSocket error: ${error}`, 'error');
+                };
+                
+                ws.onclose = (event) => {
+                    log(`WebSocket closed: Code ${event.code}, Reason: ${event.reason || 'No reason'}`, 'info');
+                    updateStatus(false);
+                };
+                
+            } catch (error) {
+                log(`Failed to create WebSocket: ${error}`, 'error');
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                log('Disconnecting...', 'info');
+                ws.close();
+                ws = null;
+            } else {
+                log('Not connected', 'info');
+            }
+        }
+        
+        function sendPing() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected', 'error');
+                return;
+            }
+            
+            const msg = JSON.stringify({ type: 'ping' });
+            ws.send(msg);
+            log(`Sent: ${msg}`, 'info');
+        }
+        
+        function requestStatus() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected', 'error');
+                return;
+            }
+            
+            const msg = JSON.stringify({ type: 'request_status' });
+            ws.send(msg);
+            log(`Sent: ${msg}`, 'info');
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            log('Log cleared', 'info');
+        }
+        
+        function handleBlockUpdate(data) {
+            document.getElementById('currentBlock').textContent = data.blockHeight || '-';
+            document.getElementById('blockReward').textContent = data.totalReward || '-';
+            document.getElementById('totalHashrate').textContent = data.totalHashPower || '-';
+            document.getElementById('activeMiners').textContent = data.activeMiners || '-';
+            
+            if (data.nextBlockTime) {
+                const nextTime = new Date(data.nextBlockTime);
+                document.getElementById('nextBlock').textContent = nextTime.toLocaleTimeString();
+            }
+        }
+        
+        function handleUserUpdate(data) {
+            log(`User update: ${JSON.stringify(data)}`, 'info');
+        }
+        
+        // Auto-connect on load
+        window.addEventListener('load', () => {
+            setTimeout(connect, 1000);
+        });
+        
+        // Update ready state every second
+        setInterval(updateReadyState, 1000);
+    </script>
+</body>
+</html>
