@@ -100,15 +100,6 @@ export default function MultiStepSignup({ onBack }: MultiStepSignupProps) {
   const handleReferralSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!signupData.referralUsername.trim()) {
-      toast({
-        title: "Referral username required",
-        description: "Please enter a valid referral username to continue",
-        variant: "destructive",
-      });
-      return;
-    }
-    
     try {
       // Check if test mode is enabled (only works for your specific device)
       const urlParams = new URLSearchParams(window.location.search);
@@ -317,13 +308,13 @@ Access Key: ${generatedAccessKey}
                 Referral Username
               </CardTitle>
               <p className="text-xs text-center text-gray-400">
-                Enter the username of the person who invited you (required)
+                Enter the username of the person who invited you (optional)
               </p>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleReferralSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="signup-referral">Referral Username (Required)</Label>
+                  <Label htmlFor="signup-referral">Referral Username (Optional)</Label>
                   <Input
                     id="signup-referral"
                     type="text"
@@ -333,11 +324,10 @@ Access Key: ${generatedAccessKey}
                       const value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
                       setSignupData(prev => ({ ...prev, referralUsername: value }));
                     }}
-                    required
                     className="bg-black border-gray-800 font-mono"
                     data-testid="input-signup-referral"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Enter the username of the person who invited you</p>
+                  <p className="text-xs text-gray-500 mt-1">Enter the username of the person who invited you (leave blank to skip)</p>
                 </div>
 
                 
@@ -354,7 +344,7 @@ Access Key: ${generatedAccessKey}
                   <Button 
                     type="submit" 
                     className="flex-1 bg-[#f7931a] hover:bg-[#ff9416] text-black font-bold"
-                    disabled={registerMutation.isPending || !signupData.referralUsername.trim()}
+                    disabled={registerMutation.isPending}
                     data-testid="button-create-account"
                   >
                     {registerMutation.isPending ? (
