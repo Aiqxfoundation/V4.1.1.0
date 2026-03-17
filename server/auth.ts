@@ -120,10 +120,6 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Please enter a valid username to create your account." });
       }
       
-      if (!referralUsername || referralUsername.trim().length === 0) {
-        return res.status(400).json({ message: "Referral Username Required: You need to be invited by an existing member to join the B2B platform. Please enter the username of the person who invited you." });
-      }
-
       // TEMPORARY TEST BYPASS: Skip device check entirely for testing
       const isTestMode = testBypass === "TEST2024";
       
