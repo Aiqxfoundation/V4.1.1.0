@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
-import { setupMining } from "./mining";
+import { setupMining, forceGenerateBlock } from "./mining";
 import type { Request, Response, NextFunction, Express } from "express";
 import { insertDepositSchema, insertWithdrawalSchema, insertDeviceFingerprintSchema, users } from "@shared/schema";
 import { createServer } from "http";
@@ -349,6 +349,29 @@ export async function registerRoutes(app: Express) {
     }
   });
   
+  // Admin endpoint to force-generate blocks for testing
+  app.post("/api/admin/force-generate-blocks", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const { count = 1 } = req.body;
+      const blocksToGenerate = Math.min(Math.max(1, parseInt(count) || 1), 50);
+
+      for (let i = 0; i < blocksToGenerate; i++) {
+        await forceGenerateBlock();
+        if (i < blocksToGenerate - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+
+      res.json({ success: true, message: `Generated ${blocksToGenerate} block(s) successfully` });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Admin endpoint to fix deposit statuses
   app.post("/api/admin/fix-deposit-statuses", async (req, res, next) => {
     try {
@@ -1671,7 +1694,8 @@ export async function registerRoutes(app: Express) {
   app.get("/api/supply-metrics", async (req, res, next) => {
     try {
       const metrics = await storage.getSupplyMetrics();
-      res.json(metrics);
+      const totalHashPower = await storage.getTotalHashPower();
+      res.json({ ...metrics, totalHashrate: parseFloat(totalHashPower) });
     } catch (error) {
       next(error);
     }

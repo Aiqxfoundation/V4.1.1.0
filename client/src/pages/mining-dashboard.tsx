@@ -43,6 +43,7 @@ interface SupplyMetrics {
   percentageMined: string;
   currentBlockReward: string;
   totalBlocks: number;
+  totalHashrate?: number;
   halvingProgress: {
     current: number;
     nextHalving: number;
@@ -198,13 +199,14 @@ export default function MiningDashboard() {
   const miningSuspended = user?.miningSuspended || false;
   
   // Enhanced Mining Calculations with Modes
+  // hashPower is stored in MH/s units (1 hashPower = 1 MH/s = 1000 KH/s)
   const baseHashrate = parseFloat(user?.hashPower || '0');
   const currentMode = miningModes[selectedMiningMode];
   const myHashrate = baseHashrate * currentMode.hashMultiplier;
-  const baseGlobalHashrate = 584732.50; // Base global hashrate in GH/s
-  const networkGrowthRate = 1.0012; // 0.12% hourly growth to simulate network expansion
-  const currentHour = new Date().getHours();
-  const globalHashrate = Math.round(baseGlobalHashrate * Math.pow(networkGrowthRate, currentHour) * 100) / 100;
+  // Use actual total network hashrate from server (in MH/s), fall back to user's hashrate if no data
+  const globalHashrate = supplyMetrics?.totalHashrate && supplyMetrics.totalHashrate > 0
+    ? supplyMetrics.totalHashrate
+    : Math.max(myHashrate, 0.001);
 
   // Memoized reward calculations for performance
   const rewardCalculations = useMemo(() => {
@@ -338,11 +340,12 @@ export default function MiningDashboard() {
   }, [unclaimedBlocks]);
   
   // Memoized hashrate display function
+  // Input is in MH/s (1 hashPower = 1 MH/s = 1000 KH/s)
   const getHashrateDisplay = useMemo(() => (hashrate: number) => {
-    if (hashrate >= 1000000) return `${(hashrate / 1000000).toFixed(3)} PH/s`;
-    if (hashrate >= 1000) return `${(hashrate / 1000).toFixed(3)} TH/s`;
-    if (hashrate >= 1) return `${hashrate.toFixed(2)} GH/s`;
-    return `${(hashrate * 1000).toFixed(0)} MH/s`;
+    if (hashrate >= 1000000) return `${(hashrate / 1000000).toFixed(3)} TH/s`;
+    if (hashrate >= 1000) return `${(hashrate / 1000).toFixed(3)} GH/s`;
+    if (hashrate >= 1) return `${hashrate.toFixed(2)} MH/s`;
+    return `${(hashrate * 1000).toFixed(2)} KH/s`;
   }, []);
 
   // Generate random hash (throttled for performance)
