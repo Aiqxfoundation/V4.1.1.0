@@ -1,0 +1,176 @@
+Here’s a clean instruction you can give to your Replit agent:
+
+
+---
+
+B2B Mining Platform — Priority Focus Areas
+
+Focus on improving security, scalability, and admin control. Implement the following:
+
+1. Authentication & Security
+
+Add 2FA (Google Auth or OTP) for login and withdrawals
+
+Make security PIN mandatory for sensitive actions
+
+Strengthen device checks:
+
+Combine device fingerprint + IP tracking + behavior analysis
+
+
+Add rate limiting on:
+
+Login attempts
+
+Registration
+
+Withdrawals
+
+
+Implement auto-ban / flag system for suspicious activity
+
+
+
+---
+
+2. Anti-Abuse System
+
+Prevent multi-account farming:
+
+Detect duplicate fingerprints, IP clusters
+
+
+Add daily earning caps per user
+
+Restrict free 100 KH/s abuse:
+
+Require minimum activity before referrals activate
+
+
+Add cooldown + limits on withdrawals
+
+
+
+---
+
+3. Admin Panel Improvements
+
+Replace current UI with clean dashboard (no hamburger menu clutter)
+
+Add:
+
+User search (by username)
+
+Full user control:
+
+Adjust balances (USDT, B2B, hash power)
+
+Ban / unban / freeze
+
+
+Deposit & withdrawal requests in separate sections
+
+
+Remove mining view from admin — show only requests + controls
+
+Add audit logs for every admin action
+
+
+
+---
+
+4. Deposit & Withdrawal System
+
+Prevent admin overload:
+
+Start building auto deposit detection (USDT TRC20 first)
+
+
+Ensure:
+
+Duplicate tx protection (already exists, keep strict)
+
+
+Add:
+
+Withdrawal queue system
+
+Daily withdrawal limits per user
+
+
+
+
+---
+
+5. Mining & Reward System
+
+Keep current O(1) global index system (do not change)
+
+Improve UX:
+
+Add warning before 24-block suspension
+
+
+Ensure:
+
+Accurate sync between Node.js and Go engine
+
+
+Add fallback if Go engine fails
+
+
+
+---
+
+6. Performance & Architecture
+
+Optimize WebSocket:
+
+Reduce load on Node.js proxy
+
+Prepare for direct Go WebSocket scaling
+
+
+Add:
+
+Caching where needed
+
+Background workers for heavy tasks
+
+
+
+
+---
+
+7. Database & Reliability
+
+Add:
+
+Backup system (daily automated backups)
+
+Fail-safe handling for transactions
+
+
+Ensure all critical actions are atomic and idempotent
+
+
+
+---
+
+Final Goal
+
+Make the system:
+
+Secure against abuse
+
+Scalable for high user load
+
+Easy for admin to control
+
+Stable under continuous mining operations
+
+
+
+---
+
+If you want, I can also write exact UI layout for admin panel + user app redesign 👍
