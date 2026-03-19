@@ -529,7 +529,7 @@ export default function MiningDashboard() {
               {/* Block Progress */}
               {!isNewUser && (
                 <div className="absolute -bottom-12 left-1/2 transform -translate-x-1/2 text-center">
-                  <div className="text-xs text-muted-foreground mb-2">Block #871235 Progress</div>
+                  <div className="text-xs text-muted-foreground mb-2">Block #{(miningStatus as any)?.currentBlock ?? '...'} Progress</div>
                   <div className="text-lg font-mono font-bold text-primary mb-2">{formatTime(blockTimer)}</div>
                   <div className="w-40 h-2 bg-background rounded-full overflow-hidden border border-border">
                     <div 
@@ -702,7 +702,7 @@ export default function MiningDashboard() {
                 </div>
               </div>
               <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                <span>Block #871235</span>
+                <span>Block #{(miningStatus as any)?.currentBlock ?? '...'}</span>
                 <span>Estimated: {myEstimatedReward.toFixed(8)} B2B</span>
               </div>
             </div>

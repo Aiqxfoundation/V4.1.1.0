@@ -10,6 +10,28 @@ import { WebSocketServer, WebSocket } from "ws";
 import Decimal from "decimal.js";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
+import { randomBytes, scrypt } from "crypto";
+import { promisify } from "util";
+
+const asyncScrypt = promisify(scrypt);
+
+async function hashPin(pin: string): Promise<string> {
+  const salt = randomBytes(16);
+  const hash = await asyncScrypt(pin, salt, 32) as Buffer;
+  return `${salt.toString('hex')}:${hash.toString('hex')}`;
+}
+
+async function verifyPin(pin: string, hashedPin: string): Promise<boolean> {
+  try {
+    const [saltHex, hashHex] = hashedPin.split(':');
+    if (!saltHex || !hashHex) return false;
+    const salt = Buffer.from(saltHex, 'hex');
+    const hash = await asyncScrypt(pin, salt, 32) as Buffer;
+    return hash.toString('hex') === hashHex;
+  } catch {
+    return false;
+  }
+}
 
 export async function registerRoutes(app: Express) {
   // Setup authentication first
@@ -1070,19 +1092,6 @@ export async function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/withdrawals", async (req, res, next) => {
-    try {
-      if (!req.isAuthenticated() || !req.user!.isAdmin) {
-        return res.status(403).json({ message: "Admin access required" });
-      }
-
-      const withdrawals = await storage.getPendingWithdrawals();
-      res.json(withdrawals);
-    } catch (error) {
-      next(error);
-    }
-  });
-
   // Also support the route the frontend is using
   app.get("/api/withdrawals/pending", async (req, res, next) => {
     try {
@@ -2093,19 +2102,51 @@ export async function registerRoutes(app: Express) {
       }
 
       const { currentPin, newPin } = z.object({
-        currentPin: z.string().length(6),
-        newPin: z.string().length(6)
+        currentPin: z.string().optional(),
+        newPin: z.string().length(6).regex(/^\d{6}$/, "PIN must be exactly 6 digits")
       }).parse(req.body);
 
-      // Validate new PIN is 6 digits
-      if (!/^\d{6}$/.test(newPin)) {
-        return res.status(400).json({ message: "PIN must be exactly 6 digits" });
+      const freshUser = await storage.getUser(req.user!.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+
+      // If PIN already set, verify current PIN before allowing change
+      if (freshUser.securityPin) {
+        if (!currentPin) {
+          return res.status(400).json({ message: "Current PIN is required to change an existing PIN" });
+        }
+        const isValid = await verifyPin(currentPin, freshUser.securityPin);
+        if (!isValid) {
+          return res.status(400).json({ message: "Current PIN is incorrect" });
+        }
       }
 
-      // For now, just validate the current PIN matches (simplified)
-      // In production, you'd verify against the stored hashed PIN
-      
+      const hashedNewPin = await hashPin(newPin);
+      await db.update(users).set({ securityPin: hashedNewPin }).where(eq(users.id, req.user!.id));
+
       res.json({ message: "PIN changed successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Verify PIN
+  app.post("/api/verify-pin", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { pin } = z.object({ pin: z.string().length(6) }).parse(req.body);
+
+      const freshUser = await storage.getUser(req.user!.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+
+      if (!freshUser.securityPin) {
+        return res.json({ valid: true, pinSet: false });
+      }
+
+      const isValid = await verifyPin(pin, freshUser.securityPin);
+      res.json({ valid: isValid, pinSet: true });
     } catch (error) {
       next(error);
     }
@@ -2140,7 +2181,7 @@ export async function registerRoutes(app: Express) {
         joinedAt: u.createdAt,
         status: parseFloat(u.baseHashPower || u.hashPower || "0") > 0 ? 'mining' : 'inactive',
         hashPower: u.baseHashPower || u.hashPower || "0",
-        earned: (parseFloat(u.usdtBalance || "0") * 0.15).toFixed(2) // Estimate based on their balance
+        earned: "0.00" // Actual earnings are tracked in totalReferralEarnings on the referrer
       }));
 
       const referralData = {

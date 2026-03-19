@@ -87,7 +87,9 @@ func main() {
         }
         store = sessions.NewCookieStore([]byte(sessionKey))
         store.Options.HttpOnly = true
-        store.Options.Secure = false // Set to true in production with HTTPS
+        // Use secure cookies when running on Replit (HTTPS) or in production
+        isProduction := os.Getenv("NODE_ENV") == "production" || os.Getenv("REPLIT_DEV_DOMAIN") != ""
+        store.Options.Secure = isProduction
         store.Options.SameSite = http.SameSiteLaxMode
 
         // Initialize WebSocket hub
@@ -201,9 +203,13 @@ func main() {
         r.Use(middleware.RealIP)
         r.Use(middleware.Timeout(60 * time.Second))
 
-        // CORS configuration
+        // CORS configuration - build allowed origins dynamically
+        allowedOrigins := []string{"http://localhost:5000", "http://localhost:5173", "http://localhost:8080"}
+        if replitDomain := os.Getenv("REPLIT_DEV_DOMAIN"); replitDomain != "" {
+                allowedOrigins = append(allowedOrigins, "https://"+replitDomain)
+        }
         r.Use(cors.Handler(cors.Options{
-                AllowedOrigins:   []string{"http://localhost:5000", "http://localhost:5173", "http://localhost:8080"},
+                AllowedOrigins:   allowedOrigins,
                 AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
                 AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
                 ExposedHeaders:   []string{"Link"},
@@ -352,10 +358,18 @@ func handleClaimRewards(w http.ResponseWriter, r *http.Request) {
                 return
         }
 
-        // Claim the specific block
+        // Start transaction to atomically claim block and credit user
+        tx, err := database.GetDB().Begin(r.Context())
+        if err != nil {
+                writeErrorResponse(w, http.StatusInternalServerError, "Failed to start transaction")
+                return
+        }
+        defer tx.Rollback(r.Context())
+
+        // Claim the specific block within the transaction
         var reward string
         var blockNumber int64
-        err := database.GetDB().QueryRow(r.Context(), `
+        err = tx.QueryRow(r.Context(), `
                 UPDATE unclaimed_blocks 
                 SET claimed = true, claimed_at = NOW()
                 WHERE id = $1 AND user_id = $2 AND claimed = false
@@ -377,7 +391,7 @@ func handleClaimRewards(w http.ResponseWriter, r *http.Request) {
         newB2BBalance := user.B2BBalance.Add(rewardDec)
 
         // Decrement unclaimed blocks count and reset suspension if below 24
-        _, err = database.GetDB().Exec(r.Context(), `
+        _, err = tx.Exec(r.Context(), `
                 UPDATE users 
                 SET unclaimed_balance = $1, 
                     b2b_balance = $2,
@@ -394,6 +408,11 @@ func handleClaimRewards(w http.ResponseWriter, r *http.Request) {
 
         if err != nil {
                 writeErrorResponse(w, http.StatusInternalServerError, "Failed to update balances")
+                return
+        }
+
+        if err = tx.Commit(r.Context()); err != nil {
+                writeErrorResponse(w, http.StatusInternalServerError, "Failed to commit transaction")
                 return
         }
 
@@ -643,9 +662,12 @@ func handleManualBlockGeneration(w http.ResponseWriter, r *http.Request) {
                 return
         }
 
-        // Broadcast block update
+        // Broadcast block update - use DB count for accurate active miner count
         totalHashPower, _ := miningCalculator.CalculateTotalHashPower(r.Context())
-        activeMiners := wsHub.GetActiveMinersCount()
+        var activeMiners int
+        database.GetDB().QueryRow(r.Context(), `
+                SELECT COUNT(*) FROM users WHERE mining_active = true AND hash_power > 0
+        `).Scan(&activeMiners)
 
         wsHub.BroadcastBlockUpdate(websocket.BlockUpdate{
                 BlockHeight:    block.BlockHeight,

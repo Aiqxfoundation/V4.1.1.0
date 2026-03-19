@@ -4,6 +4,20 @@
 
 A revolutionary next-generation mining platform inspired by Bitcoin's 2nd Block reward mechanics, implementing a unique 21 million B2B token ecosystem with accelerated distribution mechanics. Built with React, Express, and PostgreSQL, the platform features 1-hour block generation, 3,200 B2B initial block rewards, and 3-month halving cycles. Mining operations automatically cease at 65.5% supply distribution (13,755,000 B2B) with the remaining 34.5% reserved and locked for future mining and community benefits (details to be revealed as infrastructure scales). The platform democratizes mining access through zero-hardware requirements while maintaining Bitcoin's fundamental principles of scarcity and decentralization.
 
+## Security & Bug Fixes (March 2026)
+- **Security backdoor removed**: TEST2024 bypass code removed from `server/auth.ts` — device fingerprinting always enforced
+- **btcConversions persisted to DB**: Was stored in-memory Map; now uses `btcConversions` PostgreSQL table
+- **securityPin field added**: New `securityPin text` column on users table for hashed PIN storage
+- **PIN change endpoint fixed**: `POST /api/change-pin` now properly hashes/verifies against DB; `POST /api/verify-pin` added
+- **Double-credit on restart fixed**: `fixDepositStatuses()` no longer re-credits already-approved deposits
+- **Duplicate admin route removed**: Second `GET /api/admin/withdrawals` (pending-only) route removed
+- **personalBlockHeight double-count fixed**: Removed extra increment from `storage.claimBlock`/`claimAllBlocks`; Go backend manages via block generation
+- **Go single-claim transaction**: `handleClaimRewards` now wrapped in DB transaction (atomic mark+credit)
+- **Go CORS fixed**: `REPLIT_DEV_DOMAIN` env var now added to allowed origins list
+- **Go session security**: `Secure` cookie flag now enabled when running on Replit (HTTPS)
+- **Go miner count fix**: Manual block generation uses DB `COUNT(*)` instead of WebSocket client count
+- **UI hardcodes fixed**: Mining dashboard block number, transfer page supply metrics, referral page stats all use real API data
+
 ## Recent Changes (December 2024)
 - **Face KYC System Removed**: Completely removed face verification requirements and face-api.js dependency
 - **Username-Based Referral System**: Changed from referral codes to username-based invitations

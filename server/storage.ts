@@ -10,6 +10,7 @@ import {
   btcStakes,
   btcStakingRewards,
   btcPriceHistory,
+  btcConversions,
   devices,
   deviceFingerprints,
   userDevices,
@@ -251,15 +252,16 @@ export class DatabaseStorage implements IStorage {
   }
   
   async fixDepositStatuses(): Promise<void> {
-    // Fix any deposits with "approved" status - they should be "completed"
-    // This also ensures balances are updated for previously stuck deposits
+    // Fix any deposits with "approved" status - only update status to "completed"
+    // Do NOT re-credit balances here: approveDeposit already credits balances when called.
+    // Any deposit stuck in "approved" was already credited at approval time.
     const approvedDeposits = await db
       .select()
       .from(deposits)
       .where(eq(deposits.status, "approved" as any));
     
     for (const deposit of approvedDeposits) {
-      // Update deposit status to completed
+      // Only update status - balance was already credited during approveDeposit
       await db
         .update(deposits)
         .set({ 
@@ -267,36 +269,6 @@ export class DatabaseStorage implements IStorage {
           updatedAt: new Date()
         })
         .where(eq(deposits.id, deposit.id));
-      
-      // Ensure user balance is updated if not already
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, deposit.userId));
-      
-      if (user) {
-        // Check if this deposit amount was already added to balance
-        // If not, add it now
-        const depositAmount = parseFloat(deposit.amount);
-        if (deposit.currency === 'BTC') {
-          const currentBalance = parseFloat(user.btcBalance || "0");
-          // Only update if it seems the deposit wasn't credited
-          // (This is a safety check - ideally we'd track this better)
-          await db.update(users)
-            .set({ 
-              btcBalance: (currentBalance + depositAmount).toFixed(8)
-            })
-            .where(eq(users.id, deposit.userId));
-        } else if (deposit.currency === 'USDT') {
-          const currentBalance = parseFloat(user.usdtBalance || "0");
-          // Only update if it seems the deposit wasn't credited
-          await db.update(users)
-            .set({ 
-              usdtBalance: (currentBalance + depositAmount).toFixed(2)
-            })
-            .where(eq(users.id, deposit.userId));
-        }
-      }
     }
     
     console.log(`Fixed ${approvedDeposits.length} deposits with incorrect status`);
@@ -1062,8 +1034,7 @@ export class DatabaseStorage implements IStorage {
     const newUnclaimedCount = Math.max(0, (user.unclaimedBlocksCount || 0) - 1);
     const updates: any = {
       b2bBalance: (parseFloat(user.b2bBalance || "0") + parseFloat(block.reward)).toFixed(8),
-      personalBlockHeight: (user.personalBlockHeight || 0) + 1,
-      lastClaimedBlock: (user.personalBlockHeight || 0) + 1,
+      lastClaimedBlock: block.blockNumber,
       lastActivityTime: new Date(),
       unclaimedBlocksCount: newUnclaimedCount
     };
@@ -1113,10 +1084,10 @@ export class DatabaseStorage implements IStorage {
       wasSuspended = user.miningSuspended || false;
       
       // Reset unclaimed counter and suspension since all blocks are claimed
+      const maxBlockNumber = blocks.length > 0 ? Math.max(...blocks.map(b => b.blockNumber)) : null;
       const updates: any = {
         b2bBalance: newBalance,
-        personalBlockHeight: (user.personalBlockHeight || 0) + blocks.length,
-        lastClaimedBlock: (user.personalBlockHeight || 0) + blocks.length,
+        lastClaimedBlock: maxBlockNumber,
         lastActivityTime: new Date(),
         unclaimedBlocksCount: 0, // Reset to 0 since all blocks claimed
         miningSuspended: false, // Reset suspension
@@ -1405,13 +1376,8 @@ export class DatabaseStorage implements IStorage {
     }
   }
   
-  // Conversion tracking - memory based for now
-  private btcConversions = new Map<string, any[]>();
-  
   async createBtcConversion(userId: string, fromCurrency: string, toCurrency: string, fromAmount: string, toAmount: string, fee: string, rate: string): Promise<any> {
-    const conversionId = 'conv-' + Math.random().toString(36).substring(7);
-    const conversion = {
-      id: conversionId,
+    const [conversion] = await db.insert(btcConversions).values({
       userId,
       fromCurrency,
       toCurrency,
@@ -1419,18 +1385,12 @@ export class DatabaseStorage implements IStorage {
       toAmount,
       fee,
       rate,
-      createdAt: new Date()
-    };
-    
-    if (!this.btcConversions.has(userId)) {
-      this.btcConversions.set(userId, []);
-    }
-    this.btcConversions.get(userId)!.push(conversion);
+    }).returning();
     return conversion;
   }
   
   async getUserBtcConversions(userId: string): Promise<any[]> {
-    return this.btcConversions.get(userId) || [];
+    return db.select().from(btcConversions).where(eq(btcConversions.userId, userId)).orderBy(desc(btcConversions.createdAt));
   }
 
   // BTC Staking methods

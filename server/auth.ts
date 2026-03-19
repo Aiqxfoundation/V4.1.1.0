@@ -114,62 +114,45 @@ export function setupAuth(app: Express) {
   // Registration endpoint - generates unique access key
   app.post("/api/register", async (req, res, next) => {
     try {
-      const { username, referralUsername, deviceData, testBypass } = req.body;
+      const { username, referralUsername, deviceData } = req.body;
       
       if (!username) {
         return res.status(400).json({ message: "Please enter a valid username to create your account." });
       }
       
-      // TEMPORARY TEST BYPASS: Skip device check entirely for testing
-      const isTestMode = testBypass === "TEST2024";
-      
-      if (isTestMode) {
-        console.log('TEST MODE ACTIVE - Skipping all device checks');
+      // Check device fingerprint first (before creating user)
+      if (!deviceData || !deviceData.serverDeviceId || !deviceData.fingerprints) {
+        return res.status(400).json({ 
+          message: "Device verification is required for registration. Please refresh the page and try again." 
+        });
       }
-      
-      if (!isTestMode) {
-        // Check device fingerprint first (before creating user)
-        if (!deviceData || !deviceData.serverDeviceId || !deviceData.fingerprints) {
-          return res.status(400).json({ 
-            message: "Device verification is required for registration. Please refresh the page and try again." 
+
+      // Check if device can register
+      const deviceResult = await storage.upsertDevice({
+        serverDeviceId: deviceData.serverDeviceId,
+        lastIp: getClientIp(req),
+        fingerprints: deviceData.fingerprints
+      });
+
+      // CRITICAL SECURITY: Enforce device registration constraints
+      if (!deviceResult.canRegister) {
+        if (deviceResult.device.blocked) {
+          return res.status(403).json({ 
+            message: "This device has been restricted from creating new accounts due to suspicious activity." 
+          });
+        } else if (deviceResult.device.registrations && deviceResult.device.registrations > 0) {
+          return res.status(403).json({ 
+            message: "An account has already been created from this device. Each device can only be used to register one account." 
+          });
+        } else {
+          return res.status(403).json({ 
+            message: "This device is not eligible for registration at this time." 
           });
         }
-
-        // Get client IP for device tracking
-
-        // Check if device can register
-        const deviceResult = await storage.upsertDevice({
-          serverDeviceId: deviceData.serverDeviceId,
-          lastIp: getClientIp(req),
-          fingerprints: deviceData.fingerprints
-        });
-
-        // CRITICAL SECURITY: Enforce device registration constraints
-        if (!deviceResult.canRegister) {
-          if (deviceResult.device.blocked) {
-            return res.status(403).json({ 
-              message: "This device has been restricted from creating new accounts due to suspicious activity." 
-            });
-          } else if (deviceResult.device.registrations && deviceResult.device.registrations > 0) {
-            return res.status(403).json({ 
-              message: "An account has already been created from this device. Each device can only be used to register one account." 
-            });
-          } else {
-            return res.status(403).json({ 
-              message: "This device is not eligible for registration at this time." 
-            });
-          }
-        }
       }
 
-
       // Generate unique access key
-      let accessKey: string;
-      let attempts = 0;
-      const maxAttempts = 10;
-      
-      // Generate unique access key (no collision check needed due to large keyspace)
-      accessKey = generateUniqueAccessKey();
+      const accessKey = generateUniqueAccessKey();
 
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
@@ -233,8 +216,8 @@ export function setupAuth(app: Express) {
       req.session.userId = user.id;
       req.user = user;
       
-      // Link device to user after successful registration (only if not in test mode)
-      if (!isTestMode && deviceData) {
+      // Link device to user after successful registration
+      if (deviceData) {
         const deviceResult = await storage.upsertDevice({
           serverDeviceId: deviceData.serverDeviceId,
           lastIp: getClientIp(req),

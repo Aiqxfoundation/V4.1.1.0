@@ -40,6 +40,7 @@ export const users = pgTable("users", {
   userIndex: decimal("user_index", { precision: 38, scale: 18 }).default("0"),
   accruedPending: decimal("accrued_pending", { precision: 38, scale: 18 }).default("0"),
   suspensionAtBlock: integer("suspension_at_block"),
+  securityPin: text("security_pin"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -220,6 +221,18 @@ export const depositAddresses = pgTable("deposit_addresses", {
 });
 
 // User Address Assignments - Tracks address assignments with cooldowns
+export const btcConversions = pgTable("btc_conversions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  fromCurrency: varchar("from_currency", { length: 10 }).notNull(),
+  toCurrency: varchar("to_currency", { length: 10 }).notNull(),
+  fromAmount: decimal("from_amount", { precision: 18, scale: 8 }).notNull(),
+  toAmount: decimal("to_amount", { precision: 18, scale: 8 }).notNull(),
+  fee: decimal("fee", { precision: 18, scale: 8 }).notNull(),
+  rate: decimal("rate", { precision: 18, scale: 8 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const userAddressAssignments = pgTable("user_address_assignments", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid("user_id").references(() => users.id).notNull(),
@@ -592,6 +605,7 @@ export type BtcStakingReward = typeof btcStakingRewards.$inferSelect;
 export type InsertBtcStakingReward = z.infer<typeof insertBtcStakingRewardSchema>;
 export type BtcPriceHistory = typeof btcPriceHistory.$inferSelect;
 export type InsertBtcPriceHistory = z.infer<typeof insertBtcPriceHistorySchema>;
+export type BtcConversion = typeof btcConversions.$inferSelect;
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 export type DeviceFingerprint = typeof deviceFingerprints.$inferSelect;

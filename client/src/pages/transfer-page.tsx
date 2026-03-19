@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -70,9 +70,14 @@ export default function TransferPage() {
     });
   };
 
+  const { data: supplyMetrics } = useQuery<any>({
+    queryKey: ['/api/supply-metrics'],
+    staleTime: 60000
+  });
+
   // Calculate percentage of supply mined
   const totalSupply = 21000000; // 21M max supply from whitepaper
-  const totalMinted = 1312500; // Mock data
+  const totalMinted = parseFloat(supplyMetrics?.circulating || supplyMetrics?.totalMinted || '0');
   const percentMined = (totalMinted / totalSupply) * 100;
   const isTransferEnabled = percentMined < 25;
 

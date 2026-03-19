@@ -11,25 +11,29 @@ export default function ReferralPage() {
   const [copied, setCopied] = useState(false);
   
   const referralLink = `https://gbtc.app/ref/${user?.username}`;
-  
-  // Mock referral data - replace with real API
+
+  const { data: referralData } = useQuery<any>({
+    queryKey: ['/api/referrals'],
+    enabled: !!user
+  });
+
   const referralStats = {
-    tier1Count: 23,
-    tier2Count: 147,
-    tier1Earnings: 234.50,
-    tier2Earnings: 73.25,
-    totalEarnings: 307.75,
-    pendingCommissions: 45.00,
-    lifetimeEarnings: 892.30
+    tier1Count: referralData?.tier1Count ?? referralData?.totalReferrals ?? 0,
+    tier2Count: referralData?.tier2Count ?? 0,
+    tier1Earnings: parseFloat(referralData?.tier1Earnings ?? referralData?.totalEarnings ?? '0'),
+    tier2Earnings: parseFloat(referralData?.tier2Earnings ?? '0'),
+    totalEarnings: parseFloat(referralData?.totalEarnings ?? user?.totalReferralEarnings ?? '0'),
+    pendingCommissions: parseFloat(referralData?.pendingCommissions ?? '0'),
+    lifetimeEarnings: parseFloat(referralData?.lifetimeEarnings ?? referralData?.totalEarnings ?? '0')
   };
 
-  const recentReferrals = [
-    { username: 'user123', tier: 1, earned: 10, date: '2h ago' },
-    { username: 'miner456', tier: 1, earned: 25, date: '5h ago' },
-    { username: 'crypto789', tier: 2, earned: 5, date: '1d ago' },
-    { username: 'trader321', tier: 1, earned: 50, date: '2d ago' },
-    { username: 'investor654', tier: 2, earned: 2.5, date: '3d ago' }
-  ];
+  const recentReferrals: Array<{ username: string; tier: number; earned: string; date: string }> =
+    (referralData?.referrals ?? []).slice(0, 5).map((r: any) => ({
+      username: r.username,
+      tier: 1,
+      earned: r.earned ?? '0',
+      date: r.joinedAt ? new Date(r.joinedAt).toLocaleDateString() : ''
+    }));
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(referralLink);
