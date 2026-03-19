@@ -703,7 +703,7 @@ export async function registerRoutes(app: Express) {
       }
 
       const { userId } = req.params;
-      await storage.updateUser(userId, { miningActive: true });
+      await storage.updateUser(userId, { miningActive: true, miningSuspended: false, unclaimedBlocksCount: 0 });
       res.json({ success: true, message: "User mining resumed" });
     } catch (error) {
       next(error);
@@ -718,7 +718,7 @@ export async function registerRoutes(app: Express) {
       }
 
       const { userId } = req.params;
-      await storage.updateUser(userId, { miningActive: true });
+      await storage.updateUser(userId, { miningActive: true, miningSuspended: false, unclaimedBlocksCount: 0 });
       res.json({ success: true, message: "User mining resumed" });
     } catch (error) {
       next(error);
@@ -742,6 +742,9 @@ export async function registerRoutes(app: Express) {
     } catch (error: any) {
       if (error?.message?.includes('wait')) {
         return res.status(429).json({ message: error.message });
+      }
+      if (error?.code === '23505' || error?.message?.includes('deposits_tx_hash_unique') || error?.message?.includes('unique constraint')) {
+        return res.status(400).json({ message: "This transaction hash has already been submitted. Please check your transaction and try again with a different hash." });
       }
       next(error);
     }
@@ -988,7 +991,7 @@ export async function registerRoutes(app: Express) {
 
       // Get all users who are actively mining
       const allUsers = await storage.getAllUsers();
-      const blockSetting = await storage.getSystemSetting("blockNumber");
+      const blockSetting = await storage.getSystemSetting("totalBlockHeight");
       const currentBlock = blockSetting ? parseInt(blockSetting.value) : 1;
 
       // Filter for active miners (have hash power and have mined recently)
