@@ -36,7 +36,8 @@ services:
         for f in /migrations/0000_needy_hammerhead.sql \
                  /migrations/0001_permanent_rewards_suspension.sql \
                  /migrations/0002_global_index_system.sql \
-                 /migrations/0003_user_address_assignments.sql; do
+                 /migrations/0003_user_address_assignments.sql \
+                 /migrations/0004_add_security_pin.sql; do
           name=$$(basename "$$f")
           applied=$$(psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "SELECT count(*) FROM base44_schema_migrations WHERE name='$$name'")
           if [ "$$applied" = "1" ]; then
