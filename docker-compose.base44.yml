@@ -27,17 +27,24 @@ services:
       DATABASE_URL: postgres://bit2block:b2b_dev_pw_change_me@db:5432/bit2block
     volumes:
       - ./migrations:/migrations:ro
-    # Apply all SQL migrations (idempotent: tolerate "already exists" errors,
-    # then verify the core tables actually exist).
+    # Track completed migrations; fail immediately on genuine SQL errors.
     command:
       - sh
       - -ec
       - |
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS base44_schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());'
         for f in /migrations/0000_needy_hammerhead.sql \
                  /migrations/0001_permanent_rewards_suspension.sql \
                  /migrations/0002_global_index_system.sql \
                  /migrations/0003_user_address_assignments.sql; do
-          psql "$$DATABASE_URL" -v ON_ERROR_STOP=0 -f "$$f" || true
+          name=$$(basename "$$f")
+          applied=$$(psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "SELECT count(*) FROM base44_schema_migrations WHERE name='$$name'")
+          if [ "$$applied" = "1" ]; then
+            echo "Skipping completed migration $$name"
+          else
+            echo "Applying migration $$name"
+            { cat "$$f"; printf "\nINSERT INTO base44_schema_migrations (name) VALUES ('%s');\n" "$$name"; } | psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction
+          fi
         done
         psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS "session" ("sid" varchar NOT NULL COLLATE "default", "sess" json NOT NULL, "expire" timestamp(6) WITHOUT time zone NOT NULL);'
         psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");'

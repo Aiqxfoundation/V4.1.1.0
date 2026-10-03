@@ -15,7 +15,11 @@
 
 ## Running here
 `docker compose -f docker-compose.base44.yml up -d --build` brings up `db`,
-`migrate` (one-shot, applies `migrations/*.sql`), `web` (port 3000), and `go-backend`.
+`migrate` (one-shot, applies pending SQL migrations), `web` (port 3000), and `go-backend`.
+Completed migrations are recorded in `base44_schema_migrations`; each pending file
+and its ledger entry run in one transaction with `ON_ERROR_STOP=1`. Never replay
+completed migrations: 0002 rewrites reward state. The original sandbox database
+was baselined after verifying the already-applied migrations and repaired 0003 index.
 The web preview is the single public entry point on port 3000. The Go backend is
 internal-only (reached by the Express proxy as `http://go-backend:8080`).
 
