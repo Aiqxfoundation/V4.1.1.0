@@ -1,0 +1,114 @@
+# Base44 development environment for BIT2BLOCK Mining.
+# Single public entry point: the Node/Express + Vite dev server on port 3000.
+# It proxies WebSocket + mining API calls to the internal Go backend service.
+services:
+  db:
+    image: postgres:16
+    restart: on-failure
+    environment:
+      POSTGRES_USER: bit2block
+      POSTGRES_PASSWORD: bit2blockdev
+      POSTGRES_DB: bit2block
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bit2block -d bit2block"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # One-shot: applies the drizzle SQL migrations (idempotent for 0001-0003;
+  # 0000 only runs when the schema is empty).
+  migrate:
+    image: postgres:16
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://bit2block:bit2blockdev@db:5432/bit2block
+    volumes:
+      - ./migrations:/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - sh
+      - -ec
+      - |
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto;'
+        if ! psql "$$DATABASE_URL" -tAc "SELECT to_regclass('public.users')" | grep -q .; then
+          psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0000_needy_hammerhead.sql
+        fi
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0001_permanent_rewards_suspension.sql
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0002_global_index_system.sql
+        # 0003 contains a partial index with CURRENT_TIMESTAMP (non-immutable)
+        # that Postgres rejects; run without abort-on-error so the rest applies.
+        psql "$$DATABASE_URL" -f /migrations/0003_user_address_assignments.sql
+        echo 'migrations complete'
+
+  # Go mining backend (internal only). WebSocket + mining API source of truth.
+  go-backend:
+    image: golang:1.24
+    restart: on-failure
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgresql://bit2block:bit2blockdev@db:5432/bit2block
+      GO_PORT: "8080"
+      NODE_ENV: development
+      SESSION_KEY: dev-session-key-bit2block
+      GOTOOLCHAIN: local
+    volumes:
+      - ./go-backend:/app
+      - gomodcache:/go/pkg/mod
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ["sh", "-ec", "go run ."]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/global-stats || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  # Node/Express + Vite dev server. Serves the React client and the REST API
+  # on port 3000; proxies mining WS/API to the go-backend service.
+  web:
+    image: node:22
+    restart: on-failure
+    working_dir: /app
+    environment:
+      PORT: "3000"
+      NODE_ENV: development
+      DATABASE_URL: postgresql://bit2block:bit2blockdev@db:5432/bit2block
+      GO_BACKEND_URL: http://go-backend:8080
+      GO_BACKEND_WS_URL: ws://go-backend:8080/api/ws
+      SESSION_SECRET: dev-session-secret-bit2block
+    env_file:
+      - path: /run/base44/app.env
+        required: false
+    volumes:
+      - ./:/app
+      - nodemodules:/app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      go-backend:
+        condition: service_healthy
+    command: ["sh", "-ec", "npm install --no-audit --no-fund && exec npm run dev"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+
+volumes:
+  pgdata:
+  gomodcache:
+  nodemodules:

@@ -50,7 +50,7 @@ export async function registerRoutes(app: Express) {
   server.on('upgrade', (request, socket, head) => {
     if (request.url === '/api/ws') {
       // Proxy WebSocket to Go backend on port 8080
-      const goBackendUrl = 'ws://localhost:8080/api/ws';
+      const goBackendUrl = process.env.GO_BACKEND_WS_URL || 'ws://localhost:8080/api/ws';
       
       try {
         const goWs = new WebSocket(goBackendUrl);
@@ -2004,7 +2004,7 @@ export async function registerRoutes(app: Express) {
       }
       
       // Forward request to Go backend
-      const response = await fetch("http://localhost:8080/api/mining/unclaimed-blocks", {
+      const response = await fetch(`${process.env.GO_BACKEND_URL || 'http://localhost:8080'}/api/mining/unclaimed-blocks`, {
         method: "GET",
         headers: {
           "X-User-ID": req.user!.id,
