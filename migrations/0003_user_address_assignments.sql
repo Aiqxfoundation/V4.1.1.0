@@ -16,6 +16,7 @@ CREATE INDEX idx_user_address_assignments_expires_at ON user_address_assignments
 CREATE INDEX idx_user_address_assignments_currency_network ON user_address_assignments(currency, network);
 
 -- Create composite index for finding active assignments
+-- (plain index: a WHERE expires_at > CURRENT_TIMESTAMP predicate is not allowed
+--  in a partial index because CURRENT_TIMESTAMP is not IMMUTABLE)
 CREATE INDEX idx_user_address_active_assignments 
-ON user_address_assignments(user_id, currency, network, expires_at)
-WHERE expires_at > CURRENT_TIMESTAMP;
+ON user_address_assignments(user_id, currency, network, expires_at);
