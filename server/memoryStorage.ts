@@ -82,6 +82,7 @@ export class MemoryStorage implements IStorage {
       username: 'admin',
       accessKey: 'admin-key-' + randomBytes(16).toString('hex'),
       referralCode: 'ADM1N0X7',
+      securityPin: null,
       referredBy: null,  // No referrer for admin
       usdtBalance: '10000.00',
 
@@ -131,6 +132,7 @@ export class MemoryStorage implements IStorage {
       username: 'super_admin',
       accessKey: 'super-admin-key-' + randomBytes(16).toString('hex'),
       referralCode: 'SUPER0X1',
+      securityPin: null,
       referredBy: null,  // No referrer for super admin
       usdtBalance: '50000.00',
       btcBalance: '100.00000000',  
@@ -193,6 +195,7 @@ export class MemoryStorage implements IStorage {
       username: 'tempuser',
       accessKey: 'temp-key-' + randomBytes(16).toString('hex'),
       referralCode: 'TEMP1234',
+      securityPin: null,
       referredBy: 'admin',  // Referred by admin (using username)
       usdtBalance: '1000.00',
 
@@ -246,6 +249,7 @@ export class MemoryStorage implements IStorage {
       username: 'testuser',
       accessKey: hashedAccessKey, // Properly hashed access key in salt:hash format
       referralCode: 'TEST1234',
+      securityPin: null,
       referredBy: 'admin',  // Referred by admin (using username)
       usdtBalance: '1000.00',
       btcBalance: '0.50000000',
@@ -330,6 +334,7 @@ export class MemoryStorage implements IStorage {
         username: minerConfig.username,
         accessKey: hashedMinerAccessKey, // Properly hashed access key
         referralCode: minerRefCode,
+        securityPin: null,
         referredBy: 'testuser', // CRITICAL: Referred by testuser (using username)
         usdtBalance: (Math.random() * 500 + 100).toFixed(2), // Random USDT balance 100-600
         btcBalance: (Math.random() * 0.1).toFixed(8), // Random BTC balance 0-0.1
@@ -394,6 +399,7 @@ export class MemoryStorage implements IStorage {
         username: 'refuser' + i,
         accessKey: 'ref-key-' + i + '-' + randomBytes(16).toString('hex'),
         referralCode: refCode,
+        securityPin: null,
         referredBy: 'admin', // Referred by admin (using username)
         usdtBalance: '500.00',
   
@@ -518,6 +524,7 @@ export class MemoryStorage implements IStorage {
       username: insertUser.username,
       accessKey: (insertUser as any).accessKey || '',
       referralCode,
+      securityPin: null,
       referredBy: insertUser.referredBy || null,
       registrationIp: (insertUser as any).registrationIp || null,
       usdtBalance: '0.00',

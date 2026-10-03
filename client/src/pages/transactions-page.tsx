@@ -15,7 +15,7 @@ import {
 import { format } from "date-fns";
 
 export default function TransactionsPage() {
-  const { data: transactions, isLoading } = useQuery({
+  const { data: transactions, isLoading } = useQuery<{ deposits: any[]; withdrawals: any[]; sentTransfers: any[]; receivedTransfers: any[] }>({
     queryKey: ["/api/transactions"]
   });
 

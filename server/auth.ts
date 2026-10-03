@@ -398,19 +398,23 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Helper middleware to check if user is authenticated
-  app.use('/api/*', (req, res, next) => {
-    // Skip auth check for auth endpoints
-    if (req.path.startsWith('/api/register') || 
-        req.path.startsWith('/api/login') || 
-        req.path === '/api/user') {
+  // Helper middleware to check if user is authenticated.
+  // NOTE: do not mount on '/api/*' — Express strips the matched prefix from
+  // req.path there, which silently breaks the skip-list checks below.
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api/')) return next();
+    // Skip auth check for auth endpoints and public read-only endpoints
+    if (req.path.startsWith('/api/register') ||
+        req.path.startsWith('/api/login') ||
+        req.path === '/api/user' ||
+        req.path === '/api/global-stats') {
       return next();
     }
-    
+
     if (!req.session?.userId || !req.user) {
       return res.status(401).json({ message: "Authentication required" });
     }
-    
+
     next();
   });
 }
