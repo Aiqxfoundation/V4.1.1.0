@@ -51,7 +51,7 @@ export default function DashboardPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Hash power purchased", description: `Successfully purchased ${formatHashPower(hashPowerAmount[0] * 100)} of hash power.` });
+      toast({ title: "Hash power purchased", description: `Successfully purchased ${formatHashPower(hashPowerAmount[0] * 0.1)} of hash power.` });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error: Error) => {
@@ -188,7 +188,7 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm text-muted-foreground font-mono">HASH_POWER</p>
                   <p className="text-2xl font-display font-black text-primary" data-testid="text-hash-power">
-                    {parseFloat(user.hashPower || '0').toFixed(2)} TH/s
+                    {formatHashPower(parseFloat(user.hashPower || '0'))}
                   </p>
                 </div>
                 <div className="w-12 h-12 cyber-border rounded-lg flex items-center justify-center glow-green">
@@ -362,7 +362,7 @@ export default function DashboardPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">You will receive:</span>
                       <span className="font-semibold text-primary" data-testid="text-hash-power-received">
-                        {formatHashPower(hashPowerAmount[0] * 100)}
+                        {formatHashPower(hashPowerAmount[0] * 0.1)}
                       </span>
                     </div>
                   </div>

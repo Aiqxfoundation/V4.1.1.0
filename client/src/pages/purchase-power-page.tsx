@@ -47,7 +47,7 @@ export default function PurchasePowerPage() {
     onSuccess: () => {
       toast({ 
         title: "Hash Power Purchased", 
-        description: `Added ${formatHashPower(selectedAmount * 100)} to your B2B mining power` 
+        description: `Added ${formatHashPower(selectedAmount * 0.1)} to your B2B mining power` 
       });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/global-stats"] });
@@ -156,7 +156,7 @@ export default function PurchasePowerPage() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400 font-medium">Current Hash Power:</span>
-                <span className="font-mono font-bold text-[#f7931a] text-lg">{formatHashPower(currentHashPower * 100)}</span>
+                <span className="font-mono font-bold text-[#f7931a] text-lg">{formatHashPower(currentHashPower)}</span>
               </div>
             </CardContent>
           </Card>
@@ -240,7 +240,7 @@ export default function PurchasePowerPage() {
                           }}
                           transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                         >
-                          {formatHashPower(selectedAmount * 100)}
+                          {formatHashPower(selectedAmount * 0.1)}
                         </motion.span>
                       </div>
                     </CardContent>
@@ -279,7 +279,7 @@ export default function PurchasePowerPage() {
                         >
                           <Zap className="w-5 h-5" />
                         </motion.div>
-                        <span className="font-bold">Purchase {formatHashPower(selectedAmount * 100)}</span>
+                        <span className="font-bold">Purchase {formatHashPower(selectedAmount * 0.1)}</span>
                       </>
                     ) : (
                       <span className="font-bold">Select Amount to Purchase</span>
