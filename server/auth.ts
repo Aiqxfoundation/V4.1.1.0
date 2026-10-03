@@ -187,8 +187,10 @@ export function setupAuth(app: Express) {
           });
         }
         
-        // Username exists - valid! Store the username directly
-        validatedReferredBy = referralUsername;
+        // Username exists — store the referrer's referralCode (not their username)
+        // so that findUserByOwnReferralCode(referredBy) lookups work correctly
+        // throughout the storage layer.
+        validatedReferredBy = referrer.referralCode;
       }
 
 

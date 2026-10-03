@@ -213,43 +213,8 @@ export async function registerRoutes(app: Express) {
     }
   });
   
-  // Get user endpoint with hash zeroing for suspended/frozen users
-  app.get("/api/user", async (req, res, next) => {
-    try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
-      const userId = req.user!.id;
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      // If user is frozen or mining suspended, zero out hash power in response only
-      // This preserves the original values for when the user is unfrozen
-      if (user.isFrozen === true || user.miningSuspended === true) {
-        // Log for debugging
-        if (user.isFrozen || user.miningSuspended) {
-          console.log(`Frozen/suspended user ${user.username} logged in - mining/rewards suspended`);
-        }
-        
-        res.json({
-          ...user,
-          hashPower: "0.00",
-          baseHashPower: "0.00",
-          referralHashBonus: "0.00",
-          lockedHashPower: "0.00",
-          nextBlockHashPower: "0.00"
-        });
-      } else {
-        res.json(user);
-      }
-    } catch (error) {
-      next(error);
-    }
-  });
+  // NOTE: GET /api/user is already registered in auth.ts (setupAuth runs first).
+  // The duplicate handler that was here has been removed to avoid dead code.
   
   // Get wallet balances with proper decimal precision
   app.get("/api/wallet/balances", async (req, res, next) => {
@@ -887,9 +852,11 @@ export async function registerRoutes(app: Express) {
 
       // Legacy referral commission for backward compatibility (if still needed)
       if (user.referredBy) {
-        const referrers = await storage.getUsersByReferralCode(user.referredBy);
-        if (referrers.length > 0) {
-          const referrer = referrers[0];
+        // BUG FIX: use findUserByOwnReferralCode to look up the actual referrer
+        // by their referralCode, NOT getUsersByReferralCode which finds users
+        // who were referred by the same code.
+        const referrer = await storage.findUserByOwnReferralCode(user.referredBy);
+        if (referrer) {
           
           // Calculate 5% hashrate boost for backward compatibility (different from new 10% system)
           const hashBoost = purchasedHashPower * 0.05; // 5% of purchased hash power for legacy system
@@ -1058,19 +1025,8 @@ export async function registerRoutes(app: Express) {
   });
 
 
-  // Admin endpoint for all withdrawals
-  app.get("/api/admin/withdrawals", async (req, res, next) => {
-    try {
-      if (!req.isAuthenticated() || !req.user!.isAdmin) {
-        return res.status(403).json({ message: "Admin access required" });
-      }
-
-      const withdrawals = await storage.getAllWithdrawals();
-      res.json(withdrawals);
-    } catch (error) {
-      next(error);
-    }
-  });
+  // NOTE: GET /api/admin/withdrawals is already registered above (line ~790).
+  // The duplicate handler that was here has been removed to avoid dead code.
   
   // Withdrawal endpoints
   app.post("/api/withdrawals", async (req, res, next) => {
@@ -2212,21 +2168,36 @@ export async function registerRoutes(app: Express) {
     }
   });
   
-  // Transfer B2B
+  // Transfer B2B — requires security PIN (same as withdrawals)
   app.post("/api/transfer", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      
-      const { toUsername, amount } = z.object({
+
+      const { toUsername, amount, pin } = z.object({
         toUsername: z.string(),
-        amount: z.string()
+        amount: z.string(),
+        pin: z.string().length(6).regex(/^\d{6}$/, "PIN must be exactly 6 digits")
       }).parse(req.body);
-      
+
+      // Verify security PIN
+      const freshUser = await storage.getUser(req.user!.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+      if (!freshUser.securityPin) {
+        return res.status(403).json({ message: "Please set your security PIN in Account settings before transferring." });
+      }
+      const pinValid = await verifyPin(pin, freshUser.securityPin);
+      if (!pinValid) {
+        return res.status(403).json({ message: "Invalid security PIN" });
+      }
+
       const transfer = await storage.createTransfer(req.user!.id, toUsername, amount);
       res.json({ message: "Transfer successful", transfer });
     } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: error.errors?.[0]?.message || "Invalid request" });
+      }
       res.status(400).json({ message: error.message });
     }
   });

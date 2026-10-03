@@ -25,6 +25,8 @@ import TransactionsPage from "@/pages/transactions-page";
 import Whitepaper from "@/pages/whitepaper";
 import GlobalPage from "@/pages/global-page";
 import BtcMiningPage from "@/pages/btc-mining";
+import ReferralPage from "@/pages/referral-page";
+import NotFound from "@/pages/not-found";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AdminProtectedRoute } from "@/lib/admin-protected-route";
 import LoadingScreen from "./LoadingScreen";
@@ -128,6 +130,7 @@ export default function MobileApp() {
           <ProtectedRoute path="/btc-mining" component={BtcMiningPage} />
           <Route path="/whitepaper" component={Whitepaper} />
           <Route path="/global" component={GlobalPage} />
+          <ProtectedRoute path="/referral" component={ReferralPage} />
           <AdminProtectedRoute path="/admin" component={AdminUsers} />
           <AdminProtectedRoute path="/admin/users" component={AdminUsers} />
           <AdminProtectedRoute path="/admin/users/active" component={ActiveUsers} />
@@ -139,6 +142,7 @@ export default function MobileApp() {
           <AdminProtectedRoute path="/admin/deposits" component={AdminDeposits} />
           <AdminProtectedRoute path="/admin/withdrawals" component={AdminWithdrawals} />
           <AdminProtectedRoute path="/admin/addresses" component={AdminAddresses} />
+          <Route component={NotFound} />
         </Switch>
       </div>
 

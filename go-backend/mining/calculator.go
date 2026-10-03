@@ -92,7 +92,7 @@ func NewMiningCalculator(db *pgxpool.Pool) *MiningCalculator {
                 db:              db,
                 currentBlock:    0,
                 blockReward:     decimal.NewFromFloat(3200), // Starting reward
-                halvingInterval: 210000,
+                halvingInterval: 2160, // 3 months: 24 blocks/day × 90 days — matches Node.js backend
                 maxSupply:       decimal.NewFromInt(21000000),
                 stopCh:          make(chan struct{}),
         }

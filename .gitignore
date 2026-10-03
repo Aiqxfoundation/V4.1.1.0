@@ -4,3 +4,20 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Sensitive files — never commit credentials or session data
+*.txt
+!replit.md
+cookies.txt
+cookies2.txt
+admin_session.txt
+super_admin_cookies.txt
+test_admin_cookies.txt
+test_user_cookies.txt
+super_admin_test.txt
+ADMIN_CREDENTIALS.txt
+SUPER_ADMIN_CREDENTIALS.txt
+SUPER_ADMIN_FIX_SUMMARY.txt
+.env
+.env.*
+!.env.example

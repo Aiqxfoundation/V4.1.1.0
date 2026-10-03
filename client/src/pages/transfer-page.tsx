@@ -15,11 +15,13 @@ export default function TransferPage() {
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
+  const [pin, setPin] = useState('');
   
   const b2bBalance = parseFloat(user?.b2bBalance || '0');
+  const hasPin = !!user?.securityPin;
 
   const transferMutation = useMutation({
-    mutationFn: async (data: { recipient: string; amount: number; memo?: string }) => {
+    mutationFn: async (data: { toUsername: string; amount: string; pin: string }) => {
       const res = await apiRequest("POST", "/api/transfer", data);
       return res.json();
     },
@@ -31,6 +33,7 @@ export default function TransferPage() {
       setRecipient('');
       setAmount('');
       setMemo('');
+      setPin('');
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error: Error) => {
@@ -62,11 +65,29 @@ export default function TransferPage() {
       });
       return;
     }
+
+    if (!hasPin) {
+      toast({
+        title: "Security PIN Required",
+        description: "Please set your security PIN in Account settings before transferring.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
+      toast({
+        title: "Invalid PIN",
+        description: "Please enter your 6-digit security PIN.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     transferMutation.mutate({
-      recipient,
-      amount: transferAmount,
-      memo
+      toUsername: recipient,
+      amount: transferAmount.toString(),
+      pin
     });
   };
 
@@ -185,6 +206,27 @@ export default function TransferPage() {
                 data-testid="input-memo"
               />
             </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground font-mono mb-1 block">
+                SECURITY PIN *
+              </label>
+              <Input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder={hasPin ? "Enter 6-digit PIN" : "Set your PIN in Account settings"}
+                maxLength={6}
+                inputMode="numeric"
+                disabled={!hasPin}
+                data-testid="input-transfer-pin"
+              />
+              {!hasPin && (
+                <p className="text-xs text-destructive mt-1">
+                  You must set a security PIN in Account settings before transferring.
+                </p>
+              )}
+            </div>
           </div>
         </Card>
 
@@ -214,7 +256,7 @@ export default function TransferPage() {
         {/* Transfer Button */}
         <Button
           onClick={handleTransfer}
-          disabled={transferMutation.isPending || !recipient || !amount || parseFloat(amount) > b2bBalance}
+          disabled={transferMutation.isPending || !recipient || !amount || parseFloat(amount) > b2bBalance || !pin}
           className="mobile-btn-primary text-lg"
           data-testid="button-confirm-transfer"
         >

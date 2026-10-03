@@ -748,7 +748,7 @@ func handleGlobalStats(w http.ResponseWriter, r *http.Request) {
                 "SELECT COALESCE(SUM(reward), 0)::text FROM mining_blocks").Scan(&totalCirculation)
 
         // Calculate current block reward
-        halvings := blockHeight / 210000
+        halvings := blockHeight / 2160 // 3 months: 24 blocks/day × 90 days — matches Node.js backend
         divisor := int64(1 << halvings)
         currentReward := decimal.NewFromFloat(3200).Div(decimal.NewFromInt(divisor))
 
@@ -759,8 +759,8 @@ func handleGlobalStats(w http.ResponseWriter, r *http.Request) {
                 "blockReward":         currentReward.String(),
                 "totalCirculation":    totalCirculation,
                 "maxSupply":           21000000,
-                "nextHalving":         ((blockHeight/210000)+1)*210000,
-                "blocksUntilHalving":  ((blockHeight/210000)+1)*210000 - blockHeight,
+                "nextHalving":         ((blockHeight/2160)+1)*2160,
+                "blocksUntilHalving":  ((blockHeight/2160)+1)*2160 - blockHeight,
         }
 
         writeJSONResponse(w, http.StatusOK, stats)

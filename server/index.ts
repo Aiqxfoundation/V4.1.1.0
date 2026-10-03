@@ -19,8 +19,13 @@ app.use(express.urlencoded({ extended: false }));
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    // Log the error for debugging but do NOT re-throw — re-throwing after
+    // the response is sent causes an unhandled promise rejection that
+    // crashes the process.
+    console.error(err);
+    if (!res.headersSent) {
+      res.status(status).json({ message });
+    }
   });
 
   // importantly only setup vite in development and after
