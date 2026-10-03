@@ -10,12 +10,13 @@ CREATE TABLE IF NOT EXISTS "user_address_assignments" (
   "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create indexes for efficient lookups
-CREATE INDEX idx_user_address_assignments_user_id ON user_address_assignments(user_id);
-CREATE INDEX idx_user_address_assignments_expires_at ON user_address_assignments(expires_at);
-CREATE INDEX idx_user_address_assignments_currency_network ON user_address_assignments(currency, network);
+-- Create indexes for efficient lookups (idempotent)
+CREATE INDEX IF NOT EXISTS idx_user_address_assignments_user_id ON user_address_assignments(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_address_assignments_expires_at ON user_address_assignments(expires_at);
+CREATE INDEX IF NOT EXISTS idx_user_address_assignments_currency_network ON user_address_assignments(currency, network);
 
--- Create composite index for finding active assignments
-CREATE INDEX idx_user_address_active_assignments 
-ON user_address_assignments(user_id, currency, network, expires_at)
-WHERE expires_at > CURRENT_TIMESTAMP;
+-- Create composite index for finding active assignments.
+-- Note: a partial index predicate cannot use CURRENT_TIMESTAMP (not IMMUTABLE),
+-- so this is a plain index covering the lookup columns instead.
+CREATE INDEX IF NOT EXISTS idx_user_address_active_assignments
+ON user_address_assignments(user_id, currency, network, expires_at);

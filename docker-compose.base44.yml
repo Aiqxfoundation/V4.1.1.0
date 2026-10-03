@@ -40,9 +40,7 @@ services:
         fi
         psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0001_permanent_rewards_suspension.sql
         psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0002_global_index_system.sql
-        # 0003 contains a partial index with CURRENT_TIMESTAMP (non-immutable)
-        # that Postgres rejects; run without abort-on-error so the rest applies.
-        psql "$$DATABASE_URL" -f /migrations/0003_user_address_assignments.sql
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0003_user_address_assignments.sql
         echo 'migrations complete'
 
   # Go mining backend (internal only). WebSocket + mining API source of truth.
