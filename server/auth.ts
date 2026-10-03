@@ -204,17 +204,8 @@ export function setupAuth(app: Express) {
         // Note: hashPower and baseHashPower will be set by database defaults
       } as any);
 
-      // SECURITY FIX: Regenerate session to prevent session fixation
-      await new Promise<void>((resolve, reject) => {
-        req.session.regenerate((err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-
-      // Set session
-      req.session.userId = user.id;
-      req.user = user;
+      // Do NOT auto-login after registration — the user must save their access key
+      // and explicitly log in. The session is only set by the /api/login endpoint.
       
       // Link device to user after successful registration
       if (deviceData) {
