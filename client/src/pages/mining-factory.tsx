@@ -145,14 +145,18 @@ function MiningFactory() {
   const { data: globalStats } = useQuery<{
     totalHashrate: number;
     blockHeight: number;
-    totalBlocksMined: number;
-    circulation: number;
-    currentBlockReward: number;
+    totalBlockHeight: number;
+    totalCirculation: number;
+    blockReward: number;
     activeMiners: number;
+    maxSupply: number;
+    nextHalving: number;
+    blocksUntilHalving: number;
   }>({
     queryKey: ["/api/global-stats"],
-    staleTime: 30000, // 30 seconds
-    gcTime: 60000, // 1 minute
+    staleTime: 15000,
+    gcTime: 60000,
+    refetchInterval: 30000,
     refetchOnWindowFocus: false
   });
 
@@ -175,7 +179,7 @@ function MiningFactory() {
   // Memoize expensive calculations to prevent unnecessary re-renders
   const totalHashrate = useMemo(() => globalStats?.totalHashrate || 0, [globalStats?.totalHashrate]);
   const blockHeight = useMemo(() => globalStats?.blockHeight || 0, [globalStats?.blockHeight]);
-  const circulation = useMemo(() => globalStats?.circulation || 0, [globalStats?.circulation]);
+  const circulation = useMemo(() => globalStats?.totalCirculation || 0, [globalStats?.totalCirculation]);
   const totalSupply = useMemo(() => 21000000, []); // 21 million total supply like Bitcoin
   
   const networkShare = useMemo(() => {
@@ -184,7 +188,7 @@ function MiningFactory() {
   
   const estimatedDaily = useMemo(() => {
     if (hashPower <= 0 || totalHashrate <= 0) return 0;
-    const dailyReward = (hashPower / totalHashrate) * (globalStats?.currentBlockReward || 3200) * 24;
+    const dailyReward = (hashPower / totalHashrate) * (globalStats?.blockReward || 3200) * 24;
     return dailyReward;
   }, [hashPower, totalHashrate, globalStats?.currentBlockReward]);
   
@@ -735,7 +739,7 @@ function MiningFactory() {
               blockHeight: block.blockNumber,
               userShare: block.reward,
               reward: block.reward,
-              totalReward: "5000",
+              totalReward: (globalStats?.blockReward || 3200).toFixed(8),
               timestamp: block.expiresAt,
               blockTime: block.expiresAt,
               blockHash: block.txHash,

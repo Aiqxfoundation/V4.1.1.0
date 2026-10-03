@@ -5,40 +5,44 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
+import { formatHashPower } from "@/lib/utils";
 
 export default function MiningPage() {
-  const { user, logoutMutation } = useAuth();
-  const [blockTimer, setBlockTimer] = useState(3600); // 1 hour in seconds
-  const [minedBlocks, setMinedBlocks] = useState(1247);
-  const [globalHashRate, setGlobalHashRate] = useState(2847.32);
-  const [networkDifficulty, setNetworkDifficulty] = useState(1.247);
-  const [currentReward, setCurrentReward] = useState(12.5);
+  const { user } = useAuth();
+  const [blockTimer, setBlockTimer] = useState(3600);
 
-  // Real-time block timer
+  // Fetch real global mining stats
+  const { data: globalStats } = useQuery({
+    queryKey: ["/api/global-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/global-stats");
+      if (!res.ok) throw new Error("Failed to fetch global stats");
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  // Fetch real mining info (block height, reward, timer, history)
+  const { data: miningInfo } = useQuery({
+    queryKey: ["/api/mining/info"],
+    queryFn: async () => {
+      const res = await fetch("/api/mining/info");
+      if (!res.ok) throw new Error("Failed to fetch mining info");
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  // Real-time block countdown timer
   useEffect(() => {
+    if (miningInfo?.timeUntilNextBlock) {
+      setBlockTimer(miningInfo.timeUntilNextBlock);
+    }
     const timer = setInterval(() => {
-      setBlockTimer(prev => {
-        if (prev <= 1) {
-          // New block mined
-          setMinedBlocks(blocks => blocks + 1);
-          return 3600; // Reset to 1 hour
-        }
-        return prev - 1;
-      });
+      setBlockTimer(prev => (prev <= 1 ? 3600 : prev - 1));
     }, 1000);
-
     return () => clearInterval(timer);
-  }, []);
-
-  // Simulate real-time mining data updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setGlobalHashRate(prev => prev + (Math.random() - 0.5) * 10);
-      setNetworkDifficulty(prev => Math.max(1, prev + (Math.random() - 0.5) * 0.01));
-    }, 15000); // Optimized update interval
-
-    return () => clearInterval(interval);
-  }, []);
+  }, [miningInfo?.timeUntilNextBlock]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -46,6 +50,15 @@ export default function MiningPage() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Real values from API, with sensible fallbacks
+  const globalHashRate = globalStats?.totalHashrate || 0;
+  const minedBlocks = globalStats?.totalBlockHeight || 0;
+  const currentReward = globalStats?.blockReward || 3200;
+  const activeMiners = globalStats?.activeMiners || 0;
+  const totalCirculation = globalStats?.totalCirculation || 0;
+  const blocksUntilHalving = miningInfo?.blocksUntilHalving || 2160;
+  const nextHalvingBlock = miningInfo?.nextHalvingBlock || 2160;
+  const userMiningHistory = miningInfo?.userMiningHistory || [];
   const blockProgress = ((3600 - blockTimer) / 3600) * 100;
 
   return (
@@ -96,14 +109,6 @@ export default function MiningPage() {
               <Link href="/dashboard" className="text-foreground hover:text-primary transition-colors font-medium">
                 <i className="fas fa-satellite-dish mr-2"></i>Control
               </Link>
-              {user && (
-                <button 
-                  onClick={() => logoutMutation.mutate()}
-                  className="text-foreground hover:text-destructive transition-colors"
-                >
-                  <i className="fas fa-sign-out-alt mr-2"></i>Exit
-                </button>
-              )}
             </nav>
           </div>
         </div>
@@ -119,7 +124,7 @@ export default function MiningPage() {
           <p className="text-xl text-muted-foreground font-mono">Real-Time Network Monitoring</p>
         </div>
 
-        {/* Real-Time Stats Grid */}
+        {/* Real-Time Stats Grid - All values from live API */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           <Card className="hologram-card border-primary/30">
             <CardContent className="p-6">
@@ -127,7 +132,7 @@ export default function MiningPage() {
                 <div>
                   <p className="text-sm text-muted-foreground font-mono">GLOBAL_HASHRATE</p>
                   <p className="text-2xl font-display font-black text-primary" data-testid="text-global-hashrate">
-                    {globalHashRate.toFixed(2)} TH/s
+                    {formatHashPower(globalHashRate)}
                   </p>
                 </div>
                 <div className="w-12 h-12 cyber-border rounded-lg flex items-center justify-center glow-green">
@@ -159,7 +164,7 @@ export default function MiningPage() {
                 <div>
                   <p className="text-sm text-muted-foreground font-mono">CURRENT_REWARD</p>
                   <p className="text-2xl font-display font-black text-accent" data-testid="text-current-reward">
-                    {currentReward} B2B
+                    {currentReward.toFixed(2)} B2B
                   </p>
                 </div>
                 <div className="w-12 h-12 cyber-border rounded-lg flex items-center justify-center">
@@ -173,13 +178,13 @@ export default function MiningPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground font-mono">DIFFICULTY</p>
-                  <p className="text-2xl font-display font-black text-chart-3" data-testid="text-difficulty">
-                    {networkDifficulty.toFixed(3)}
+                  <p className="text-sm text-muted-foreground font-mono">ACTIVE_MINERS</p>
+                  <p className="text-2xl font-display font-black text-chart-3" data-testid="text-active-miners">
+                    {activeMiners.toLocaleString()}
                   </p>
                 </div>
                 <div className="w-12 h-12 cyber-border rounded-lg flex items-center justify-center">
-                  <i className="fas fa-shield-alt text-chart-3 mining-pulse"></i>
+                  <i className="fas fa-users text-chart-3 mining-pulse"></i>
                 </div>
               </div>
             </CardContent>
@@ -210,8 +215,12 @@ export default function MiningPage() {
                 </div>
                 <Progress value={blockProgress} className="h-3 bg-secondary" />
                 <div className="flex justify-between text-xs text-muted-foreground font-mono">
-                  <span>Started</span>
+                  <span>Current Block</span>
                   <span>Block #{minedBlocks + 1}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground font-mono">
+                  <span>Blocks until halving</span>
+                  <span>{blocksUntilHalving} (at block #{nextHalvingBlock})</span>
                 </div>
               </div>
             </CardContent>
@@ -260,22 +269,20 @@ export default function MiningPage() {
           </Card>
         </div>
 
-        {/* Recent Blocks & Mining Activity */}
+        {/* Real Mining History & Supply Info */}
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
             <Card className="hologram-card">
               <CardHeader>
                 <CardTitle className="flex items-center font-display text-xl">
                   <i className="fas fa-history text-primary mr-3"></i>
-                  RECENT BLOCKS
+                  {user ? "YOUR MINING HISTORY" : "RECENT BLOCKS"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => {
-                    const blockNum = minedBlocks - i;
-                    const timeAgo = (i + 1) * 10;
-                    return (
+                {user && userMiningHistory.length > 0 ? (
+                  <div className="space-y-4">
+                    {userMiningHistory.map((block: any, i: number) => (
                       <div key={i} className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-primary/20">
                         <div className="flex items-center space-x-4">
                           <div className="w-10 h-10 cyber-border rounded-lg flex items-center justify-center">
@@ -284,18 +291,36 @@ export default function MiningPage() {
                             </div>
                           </div>
                           <div>
-                            <p className="font-display font-bold text-foreground">Block #{blockNum}</p>
-                            <p className="text-sm text-muted-foreground font-mono">{timeAgo} minutes ago</p>
+                            <p className="font-display font-bold text-foreground">Block #{block.blockNumber}</p>
+                            <p className="text-sm text-muted-foreground font-mono">
+                              {formatHashPower(parseFloat(block.lockedHashrate || '0'))} locked
+                            </p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="font-display font-bold text-primary">+{currentReward} B2B</p>
-                          <p className="text-sm text-muted-foreground font-mono">{(globalHashRate - i * 10).toFixed(2)} TH/s</p>
+                          <p className="font-display font-bold text-primary">+{parseFloat(block.reward || '0').toFixed(8)} B2B</p>
+                          <p className="text-sm text-muted-foreground font-mono">Reward earned</p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground font-mono mb-4">
+                        {user ? "No mining history yet. Start mining to earn blocks!" : "Log in to see your mining history."}
+                      </p>
+                      {!user && (
+                        <Link href="/auth">
+                          <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-display">
+                            <i className="fas fa-sign-in-alt mr-2"></i>
+                            Login / Register
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -304,35 +329,79 @@ export default function MiningPage() {
             <Card className="hologram-card">
               <CardHeader>
                 <CardTitle className="flex items-center font-display text-xl">
+                  <i className="fas fa-chart-line text-chart-4 mr-3"></i>
+                  NETWORK STATS
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-mono">Total Supply:</span>
+                    <span className="font-semibold text-chart-4">21,000,000 B2B</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-mono">Circulating:</span>
+                    <span className="font-semibold text-primary">{totalCirculation.toFixed(2)} B2B</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-mono">Block Reward:</span>
+                    <span className="font-semibold text-accent">{currentReward.toFixed(2)} B2B</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-mono">Halving at:</span>
+                    <span className="font-semibold text-chart-3">Block #{nextHalvingBlock}</span>
+                  </div>
+                  {user && (
+                    <>
+                      <div className="pt-4 border-t border-border">
+                        <div className="flex justify-between mb-2">
+                          <span className="text-muted-foreground font-mono">Your Hashrate:</span>
+                          <span className="font-semibold text-primary">{formatHashPower(parseFloat(user.hashPower || '0'))}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground font-mono">Pending Rewards:</span>
+                          <span className="font-semibold text-chart-3">{parseFloat(user.unclaimedBalance || '0').toFixed(8)} B2B</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="hologram-card mt-4">
+              <CardHeader>
+                <CardTitle className="flex items-center font-display text-xl">
                   <i className="fas fa-cogs text-chart-4 mr-3"></i>
                   MINING CONTROLS
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <Link href="/dashboard">
-                    <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display" data-testid="button-dashboard">
-                      <i className="fas fa-tachometer-alt mr-2"></i>
-                      VIEW DASHBOARD
-                    </Button>
-                  </Link>
-                  
-                  <Link href="/auth">
-                    <Button className="w-full bg-gradient-to-r from-chart-4 to-accent text-primary-foreground hover:scale-105 transition-all font-display" data-testid="button-start-mining">
-                      <i className="fas fa-rocket mr-2"></i>
-                      START MINING
-                    </Button>
-                  </Link>
-                  
-                  <Button className="w-full hologram-card text-foreground hover:scale-105 transition-all font-display">
-                    <i className="fas fa-download mr-2"></i>
-                    DOWNLOAD STATS
-                  </Button>
-                  
-                  <Button className="w-full hologram-card text-foreground hover:scale-105 transition-all font-display">
-                    <i className="fas fa-share-alt mr-2"></i>
-                    SHARE PROTOCOL
-                  </Button>
+                  {user ? (
+                    <>
+                      <Link href="/dashboard">
+                        <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display" data-testid="button-dashboard">
+                          <i className="fas fa-tachometer-alt mr-2"></i>
+                          VIEW DASHBOARD
+                        </Button>
+                      </Link>
+                      
+                      <Link href="/purchase-power">
+                        <Button className="w-full bg-gradient-to-r from-chart-4 to-accent text-primary-foreground hover:scale-105 transition-all font-display" data-testid="button-start-mining">
+                          <i className="fas fa-rocket mr-2"></i>
+                          PURCHASE POWER
+                        </Button>
+                      </Link>
+                    </>
+                  ) : (
+                    <Link href="/auth">
+                      <Button className="w-full bg-gradient-to-r from-chart-4 to-accent text-primary-foreground hover:scale-105 transition-all font-display" data-testid="button-start-mining">
+                        <i className="fas fa-rocket mr-2"></i>
+                        START MINING
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -66,6 +66,7 @@ export default function AccountPage() {
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
+  const hasPin = !!user?.securityPin;
 
   // Fetch referral codes
   const { data: referralCodes, isLoading: loadingCodes } = useQuery<ReferralCode[]>({
@@ -135,7 +136,16 @@ export default function AccountPage() {
   });
 
   const handlePinChange = () => {
-    if (!currentPin || !newPin || !confirmPin) {
+    if (hasPin && !currentPin) {
+      toast({ 
+        title: "Invalid Input", 
+        description: "Please enter your current PIN", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    if (!newPin || !confirmPin) {
       toast({ 
         title: "Invalid Input", 
         description: "Please fill all fields", 
@@ -162,7 +172,7 @@ export default function AccountPage() {
       return;
     }
 
-    changePinMutation.mutate({ currentPin, newPin });
+    changePinMutation.mutate({ currentPin: hasPin ? currentPin : '', newPin });
   };
 
   const copyCode = (code: string) => {
@@ -424,7 +434,7 @@ export default function AccountPage() {
                   <Shield className="w-5 h-5 text-primary" />
                   <div>
                     <p className="font-semibold">Security PIN</p>
-                    <p className="text-xs text-muted-foreground">Change your 6-digit PIN</p>
+                    <p className="text-xs text-muted-foreground">{hasPin ? "Change your 6-digit PIN" : "Set your 6-digit withdrawal PIN"}</p>
                   </div>
                 </div>
                 <span className="text-xs text-muted-foreground">›</span>
@@ -450,12 +460,13 @@ export default function AccountPage() {
       <Dialog open={showPinDialog} onOpenChange={setShowPinDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Change Security PIN</DialogTitle>
+            <DialogTitle>{hasPin ? "Change Security PIN" : "Set Security PIN"}</DialogTitle>
             <DialogDescription>
-              Update your 6-digit security PIN
+              {hasPin ? "Update your 6-digit security PIN" : "Set a 6-digit security PIN required for withdrawals"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {hasPin && (
             <div>
               <Label htmlFor="current-pin">Current PIN</Label>
               <Input
@@ -468,6 +479,7 @@ export default function AccountPage() {
                 data-testid="input-current-pin"
               />
             </div>
+            )}
             <div>
               <Label htmlFor="new-pin">New PIN</Label>
               <Input

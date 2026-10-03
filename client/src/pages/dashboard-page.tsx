@@ -20,6 +20,17 @@ export default function DashboardPage() {
   const [hashPowerAmount, setHashPowerAmount] = useState([1]);
   const [withdrawAmount, setWithdrawAmount] = useState("");
 
+  // Fetch real mining info for block height and reward
+  const { data: miningInfo } = useQuery({
+    queryKey: ["/api/mining/info"],
+    queryFn: async () => {
+      const res = await fetch("/api/mining/info");
+      if (!res.ok) throw new Error("Failed to fetch mining info");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
   const depositMutation = useMutation({
     mutationFn: async (data: { network: string; txHash: string; amount: string }) => {
       const res = await apiRequest("POST", "/api/deposits", data);
@@ -388,13 +399,30 @@ export default function DashboardPage() {
                 <div className="space-y-4">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Current Block:</span>
-                    <span className="font-semibold text-primary">#2</span>
+                    <span className="font-semibold text-primary">#{miningInfo?.blockHeight || 0}</span>
                   </div>
                   
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Block Reward:</span>
-                    <span className="font-semibold text-chart-4">50 B2B</span>
+                    <span className="font-semibold text-chart-4">{parseFloat(miningInfo?.blockReward || '3200').toFixed(2)} B2B</span>
                   </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Your Hashrate:</span>
+                    <span className="font-semibold text-primary">{formatHashPower(parseFloat(user.hashPower || '0'))}</span>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Base Hashrate:</span>
+                    <span className="font-semibold text-chart-3">{formatHashPower(parseFloat(user.baseHashPower || '0'))}</span>
+                  </div>
+                  
+                  {parseFloat(user.referralHashBonus || '0') > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Referral Bonus:</span>
+                      <span className="font-semibold text-accent">{formatHashPower(parseFloat(user.referralHashBonus || '0'))}</span>
+                    </div>
+                  )}
                   
                   <div className="pt-4 border-t border-border">
                     <Button 

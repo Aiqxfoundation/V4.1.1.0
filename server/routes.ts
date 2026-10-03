@@ -505,13 +505,15 @@ export async function registerRoutes(app: Express) {
       }
 
       const users = await storage.getAllUsers();
-      // Filter for default miners: hashPower = 100 or baseHashPower = 100 (only base, no additional)
+      // Filter for default miners: users who only have the free 100 KH/s (0.1 hashPower) base, no additional purchases
       const defaultMiners = users.filter(user => {
         const hashPower = parseFloat(user.hashPower || "0");
         const baseHashPower = parseFloat(user.baseHashPower || "0");
-        // Users with exactly 100 hash power and base hash power of 100 or 0
-        return (hashPower === 100 && (baseHashPower === 100 || baseHashPower === 0)) ||
-               (baseHashPower === 100 && hashPower === 100);
+        const referralBonus = parseFloat(user.referralHashBonus || "0");
+        // Default miners have exactly the free tier: baseHashPower = 0.1 (100 KH/s) and no referral bonus
+        // Also include users who haven't started mining yet (baseHashPower = 0)
+        return (baseHashPower === 0.1 && referralBonus === 0) ||
+               (baseHashPower === 0 && hashPower === 0);
       });
 
       res.json(defaultMiners);
@@ -1075,6 +1077,18 @@ export async function registerRoutes(app: Express) {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Security: withdrawals require the user's security PIN
+      const { pin } = z.object({ pin: z.string().length(6).regex(/^\d{6}$/, "PIN must be exactly 6 digits") }).parse(req.body);
+      const freshUser = await storage.getUser(req.user!.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+      if (!freshUser.securityPin) {
+        return res.status(403).json({ message: "Please set your security PIN in Account settings before withdrawing." });
+      }
+      const pinValid = await verifyPin(pin, freshUser.securityPin);
+      if (!pinValid) {
+        return res.status(403).json({ message: "Invalid security PIN" });
       }
 
       const withdrawalData = insertWithdrawalSchema.parse(req.body);

@@ -13,12 +13,14 @@ export default function WithdrawPage() {
   const { toast } = useToast();
   const [amount, setAmount] = useState('');
   const [address, setAddress] = useState('');
+  const [pin, setPin] = useState('');
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [cooldownEndTime, setCooldownEndTime] = useState<number | null>(null);
   
   const usdtBalance = parseFloat(user?.usdtBalance || '0');
   const withdrawFee = 1; // 1 USDT flat fee
   const maxWithdraw = Math.max(0, usdtBalance);
+  const hasPin = !!user?.securityPin;
 
   // Check cooldown status
   const { data: cooldownData, refetch: refetchCooldown } = useQuery({
@@ -74,7 +76,7 @@ export default function WithdrawPage() {
   }, [cooldownEndTime, refetchCooldown]);
 
   const createWithdrawalMutation = useMutation({
-    mutationFn: async (data: { amount: string; address: string; network: string }) => {
+    mutationFn: async (data: { amount: string; address: string; network: string; pin: string }) => {
       const res = await apiRequest("POST", "/api/withdrawals", data);
       if (!res.ok) {
         const error = await res.json().catch(() => ({ message: "Failed to process withdrawal" }));
@@ -89,6 +91,7 @@ export default function WithdrawPage() {
       });
       setAmount('');
       setAddress('');
+      setPin('');
       queryClient.invalidateQueries({ queryKey: ["/api/withdrawals"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       refetchCooldown();
@@ -156,11 +159,30 @@ export default function WithdrawPage() {
       });
       return;
     }
+
+    // Security PIN is required for withdrawals
+    if (!hasPin) {
+      toast({ 
+        title: "Security PIN Required", 
+        description: "Please set your security PIN in Account settings before withdrawing.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
+      toast({ 
+        title: "Invalid PIN", 
+        description: "Please enter your 6-digit security PIN.", 
+        variant: "destructive" 
+      });
+      return;
+    }
     
     createWithdrawalMutation.mutate({
       amount: withdrawAmount.toString(),
       address: address.trim(),
-      network: 'ERC20'
+      network: 'ERC20',
+      pin
     });
   };
 
@@ -227,6 +249,29 @@ export default function WithdrawPage() {
               </p>
             </div>
 
+            {/* Security PIN Input */}
+            <div>
+              <label className="text-xs text-muted-foreground font-mono mb-1.5 block">
+                SECURITY PIN
+              </label>
+              <Input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder={hasPin ? "Enter 6-digit PIN" : "Set your PIN in Account settings"}
+                maxLength={6}
+                inputMode="numeric"
+                disabled={!hasPin}
+                className="font-mono text-sm"
+                data-testid="input-withdraw-pin"
+              />
+              {!hasPin && (
+                <p className="text-[10px] text-orange-500 mt-1">
+                  You must set a security PIN in Account settings before withdrawing.
+                </p>
+              )}
+            </div>
+
             {/* Summary */}
             {amount && parseFloat(amount) > 0 && (
               <div className="p-3 bg-muted/30 rounded-lg space-y-1.5">
@@ -257,6 +302,8 @@ export default function WithdrawPage() {
             createWithdrawalMutation.isPending || 
             !amount || 
             !address || 
+            !hasPin ||
+            !pin || 
             parseFloat(amount) < 50 || 
             parseFloat(amount) + withdrawFee > usdtBalance || 
             (cooldownData && !cooldownData.canWithdraw)

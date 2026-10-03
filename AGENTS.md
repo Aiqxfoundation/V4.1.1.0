@@ -24,10 +24,13 @@ Services: `db` → `migrate` (one-shot) → `go-backend` → `web`. Health: `doc
 - `server/storage.ts` `initStorage()` throws if the DB is unreachable — memory-storage
   fallback was intentionally disabled by the project. A working Postgres is required.
 - SQL migrations live in `migrations/`. `0000` is non-idempotent (plain `CREATE TABLE`);
-  the compose `migrate` service runs it only when the schema is empty. `0001`–`0003` are
+  the compose `migrate` service runs it only when the schema is empty. `0001`–`0005` are
   idempotent. `0003` contains a partial index with `CURRENT_TIMESTAMP` (non-immutable)
   that Postgres rejects — it is applied without abort-on-error; the rest of that file
   (table + valid indexes) still applies. The rejected index is a perf optimization only.
+  `0004` adds the `security_pin` column to `users` (was in schema but missing from DB).
+  `0005` backfills the default 100 KH/s (0.1 system units) hashrate for existing users
+  who had 0 — ensures fair default for all users per app rules.
 - No external credentials are required. All config (DATABASE_URL, SESSION_SECRET,
   GO_PORT) is local infra generated in compose.
 - Vite `allowedHosts: true` already accepts the preview origin; no host/origin allowlist

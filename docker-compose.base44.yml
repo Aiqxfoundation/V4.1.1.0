@@ -41,6 +41,8 @@ services:
         psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0001_permanent_rewards_suspension.sql
         psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0002_global_index_system.sql
         psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0003_user_address_assignments.sql
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0004_security_pin.sql
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0005_default_hashrate.sql
         echo 'migrations complete'
 
   # Go mining backend (internal only). WebSocket + mining API source of truth.

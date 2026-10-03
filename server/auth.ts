@@ -401,9 +401,12 @@ export function setupAuth(app: Express) {
   // Helper middleware to check if user is authenticated
   app.use('/api/*', (req, res, next) => {
     // Skip auth check for auth endpoints
-    if (req.path.startsWith('/api/register') || 
-        req.path.startsWith('/api/login') || 
-        req.path === '/api/user') {
+    const fullPath = req.originalUrl || req.path;
+    if (fullPath.startsWith('/api/register') || 
+        fullPath.startsWith('/api/login') || 
+        fullPath === '/api/user' ||
+        fullPath === '/api/global-stats' ||
+        fullPath === '/api/mining/info') {
       return next();
     }
     
