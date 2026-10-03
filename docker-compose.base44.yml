@@ -1,0 +1,114 @@
+# Base44 development environment for the B2B Mining Platform.
+# Node/Express + Vite app (single origin on port 3000) with a Go mining backend
+# and a local PostgreSQL database. Source is bind-mounted so edits hot-reload.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_USER: bit2block
+      POSTGRES_PASSWORD: b2b_dev_pw_change_me
+      POSTGRES_DB: bit2block
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bit2block -d bit2block"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://bit2block:b2b_dev_pw_change_me@db:5432/bit2block
+    volumes:
+      - ./migrations:/migrations:ro
+    # Apply all SQL migrations (idempotent: tolerate "already exists" errors,
+    # then verify the core tables actually exist).
+    command:
+      - sh
+      - -ec
+      - |
+        for f in /migrations/0000_needy_hammerhead.sql \
+                 /migrations/0001_permanent_rewards_suspension.sql \
+                 /migrations/0002_global_index_system.sql \
+                 /migrations/0003_user_address_assignments.sql; do
+          psql "$$DATABASE_URL" -v ON_ERROR_STOP=0 -f "$$f" || true
+        done
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS "session" ("sid" varchar NOT NULL COLLATE "default", "sess" json NOT NULL, "expire" timestamp(6) WITHOUT time zone NOT NULL);'
+        psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");'
+        psql "$$DATABASE_URL" -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'" | grep -q 1
+
+  web:
+    image: node:20-bookworm
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      DATABASE_URL: postgres://bit2block:b2b_dev_pw_change_me@db:5432/bit2block
+      GO_BACKEND_URL: http://go-backend:8080
+      SESSION_SECRET: b2b-dev-session-secret
+      # Vite host allowlist (bare value appended by Vite >= 6.1; harmless on 5.x)
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: ${BASE44_PUBLIC_HOST_SUFFIX}
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    volumes:
+      - .:/app
+      - /app/node_modules
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    command:
+      - sh
+      - -ec
+      - "npm ci --no-audit --no-fund && exec npm run dev"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "node -e \"fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 90s
+
+  go-backend:
+    image: golang:1.24
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      GO_PORT: "8080"
+      DATABASE_URL: postgres://bit2block:b2b_dev_pw_change_me@db:5432/bit2block?sslmode=disable
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - ./go-backend:/app/go-backend
+      - gomod:/go/pkg/mod
+    working_dir: /app/go-backend
+    command:
+      - sh
+      - -ec
+      - "go mod download && exec go run main.go"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/global-stats || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 60s
+
+volumes:
+  pgdata:
+  gomod:
