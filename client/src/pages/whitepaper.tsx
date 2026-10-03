@@ -562,6 +562,190 @@ export default function Whitepaper() {
             margin-right: 8px;
         }
         
+        .token-supply-box {
+            background: #111316;
+            border: 1px solid #16181D;
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        
+        .total-supply {
+            color: #F7931A;
+            font-weight: 700;
+            font-size: 20px;
+            margin-bottom: 16px;
+        }
+        
+        .supply-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        
+        .supply-label {
+            color: #E5E7EB;
+        }
+        
+        .supply-value {
+            color: #F7931A;
+            font-weight: 600;
+        }
+        
+        .supply-value-reserved {
+            color: #6B7280;
+            font-weight: 600;
+        }
+        
+        .supply-note {
+            color: #6B7280;
+            font-size: 14px;
+            margin-top: 16px;
+            margin-bottom: 0;
+        }
+        
+        .emission-schedule {
+            margin: 24px 0;
+        }
+        
+        .emission-item {
+            background: #111316;
+            border: 1px solid #16181D;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .emission-item.opacity-70 {
+            opacity: 0.7;
+        }
+        
+        .emission-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .emission-title {
+            color: #E5E7EB;
+            font-weight: 500;
+        }
+        
+        .emission-date {
+            color: #6B7280;
+            font-size: 14px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: #0D0F14;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            border-radius: 9999px;
+        }
+        
+        .progress-fill.genesis {
+            width: 100%;
+            background: linear-gradient(to right, #F7931A, #F7B31A);
+        }
+        
+        .progress-fill.first {
+            background: linear-gradient(to right, #F7931A, #E88A1A);
+        }
+        
+        .progress-fill.second {
+            background: linear-gradient(to right, #F7931A, #D77A1A);
+        }
+        
+        .progress-fill.third {
+            background: linear-gradient(to right, #F7931A, #C66A1A);
+        }
+        
+        .progress-fill.subsequent {
+            background: linear-gradient(to right, #F7931A, #B55A1A);
+        }
+        
+        .emission-footer {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+        }
+        
+        .emission-sub {
+            color: #9AA3AF;
+            font-size: 12px;
+        }
+        
+        .emission-rate {
+            color: #F7931A;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .distribution-box {
+            background: #111316;
+            border: 1px solid rgba(247, 147, 26, 0.2);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 24px 0;
+        }
+        
+        .distribution-box h3 {
+            color: #E5E7EB;
+            font-weight: 500;
+            font-size: 16px;
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        
+        .dist-item {
+            margin-bottom: 12px;
+        }
+        
+        .dist-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        
+        .dist-label {
+            color: #9AA3AF;
+            font-size: 14px;
+        }
+        
+        .dist-value {
+            color: #F7931A;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .dist-value-reserved {
+            color: #6B7280;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .progress-bar-sm {
+            width: 100%;
+            height: 8px;
+            background: #0D0F14;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        
+        .progress-fill-reserved {
+            height: 100%;
+            background: #6B7280;
+            border-radius: 9999px;
+        }
+        
         @media (max-width: 768px) {
             .metric-grid {
                 grid-template-columns: 1fr;
@@ -589,11 +773,20 @@ export default function Whitepaper() {
         
         <h2><span class="section-number">2.</span>Token Supply</h2>
         
-        <p><strong>Total Supply: 21,000,000</strong></p>
-        
-        <p>65.5% — App-based Mining</p>
-        
-        <p>34.5% — Reserved for mainnet mining, development, scaling, and ecosystem growth incentives everything for community benefits later.</p>
+        <div class="token-supply-box">
+            <p class="total-supply">Total Supply: 21,000,000</p>
+            
+            <div class="supply-row">
+                <span class="supply-label">65.5% — App-based Mining</span>
+                <span class="supply-value">13,755,000 B2B</span>
+            </div>
+            <div class="supply-row">
+                <span class="supply-label">34.5% — Reserved</span>
+                <span class="supply-value-reserved">7,245,000 B2B</span>
+            </div>
+            
+            <p class="supply-note">Reserved for mainnet mining, development, scaling, and ecosystem growth incentives everything for community benefits later.</p>
+        </div>
         
         <h2><span class="section-number">3.</span>Reward Distribution</h2>
         
@@ -609,8 +802,89 @@ export default function Whitepaper() {
         
         <p>Quarterly Halving reduces block rewards over time to ensure fairness with early adopters while enhance & balance scarcity overtime.</p>
         
-        <p>First Halving Is Occur From Q1 2026.
-        Scarcity increases with each halving cycle, supporting long-term sustainability.</p>
+        <div class="emission-schedule">
+            <div class="emission-item">
+                <div class="emission-header">
+                    <span class="emission-title">Genesis Period</span>
+                    <span class="emission-date">Q4 2025 - Q1 2026</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill genesis" style="width: 100%"></div></div>
+                <div class="emission-footer">
+                    <span class="emission-sub">Initial Rewards</span>
+                    <span class="emission-rate">100% Rate</span>
+                </div>
+            </div>
+            
+            <div class="emission-item">
+                <div class="emission-header">
+                    <span class="emission-title">First Halving</span>
+                    <span class="emission-date">Q1 2026 - Q2 2026</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill first" style="width: 50%"></div></div>
+                <div class="emission-footer">
+                    <span class="emission-sub">Reduced Rewards</span>
+                    <span class="emission-rate">50% Rate</span>
+                </div>
+            </div>
+            
+            <div class="emission-item">
+                <div class="emission-header">
+                    <span class="emission-title">Second Halving</span>
+                    <span class="emission-date">Q2 2026 - Q3 2026</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill second" style="width: 25%"></div></div>
+                <div class="emission-footer">
+                    <span class="emission-sub">Quarter Rewards</span>
+                    <span class="emission-rate">25% Rate</span>
+                </div>
+            </div>
+            
+            <div class="emission-item">
+                <div class="emission-header">
+                    <span class="emission-title">Third Halving</span>
+                    <span class="emission-date">Q3 2026 - Q4 2026</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill third" style="width: 12.5%"></div></div>
+                <div class="emission-footer">
+                    <span class="emission-sub">Eighth Rewards</span>
+                    <span class="emission-rate">12.5% Rate</span>
+                </div>
+            </div>
+            
+            <div class="emission-item opacity-70">
+                <div class="emission-header">
+                    <span class="emission-title">Subsequent Halvings</span>
+                    <span class="emission-date">Q4 2026+</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill subsequent" style="width: 6%"></div></div>
+                <div class="emission-footer">
+                    <span class="emission-sub">Diminishing Rewards</span>
+                    <span class="emission-rate">&lt; 12.5% Rate</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="distribution-box">
+            <h3>Total Supply Distribution</h3>
+            <div class="dist-item">
+                <div class="dist-header">
+                    <span class="dist-label">App Mining Distribution</span>
+                    <span class="dist-value">65.5%</span>
+                </div>
+                <div class="progress-bar-sm"><div class="progress-fill" style="width: 65.5%"></div></div>
+            </div>
+            <div class="dist-item">
+                <div class="dist-header">
+                    <span class="dist-label">Reserved for Future</span>
+                    <span class="dist-value-reserved">34.5%</span>
+                </div>
+                <div class="progress-bar-sm"><div class="progress-fill-reserved" style="width: 34.5%"></div></div>
+            </div>
+        </div>
+        
+        <p style="font-size: 14px; color: #9AA3AF;">
+            First Halving Is Occur From Q1 2026. Scarcity increases with each halving cycle, supporting long-term sustainability.
+        </p>
         
         <h2><span class="section-number">5.</span>Conclusion</h2>
         

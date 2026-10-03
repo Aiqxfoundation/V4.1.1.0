@@ -207,6 +207,8 @@ export default function MiningDashboard() {
   const globalHashrate = supplyMetrics?.totalHashrate && supplyMetrics.totalHashrate > 0
     ? supplyMetrics.totalHashrate
     : Math.max(myHashrate, 0.001);
+  // Network growth rate is not reported by the API; default to 1 (0%/hr) until available
+  const networkGrowthRate = 1;
 
   // Memoized reward calculations for performance
   const rewardCalculations = useMemo(() => {
