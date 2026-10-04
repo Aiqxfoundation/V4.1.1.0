@@ -281,12 +281,12 @@ export async function registerRoutes(app: Express) {
       const availableBtc = Decimal.max(0, btcBalance.minus(pendingBtcWithdrawals));
       const availableB2b = Decimal.max(0, b2bBalance.minus(pendingB2bWithdrawals));
 
-      // Convert to strings only at final output to preserve precision
-      // Return flat object structure that client expects
+      // Return available balances (total minus pending withdrawals) to prevent
+      // users from withdrawing funds that are already locked in pending requests
       res.json({
-        btcBalance: user.btcBalance || "0",
-        usdtBalance: user.usdtBalance || "0",
-        b2bBalance: user.b2bBalance || "0"
+        btcBalance: availableBtc.toString(),
+        usdtBalance: availableUsdt.toString(),
+        b2bBalance: availableB2b.toString()
       });
     } catch (error) {
       next(error);

@@ -519,7 +519,7 @@ export default function WalletPage() {
     }
     
     const amount = safeParseFloat(withdrawAmount);
-    const maxAmount = selectedAsset === 'B2B' ? gbtcBalance : usdtBalance;
+    const maxAmount = selectedAsset === 'B2B' ? gbtcBalance : selectedAsset === 'BTC' ? btcBalance : usdtBalance;
     const minWithdrawal = selectedAsset === 'B2B' ? 0.01 : selectedAsset === 'BTC' ? 0.001 : 100; // 100 USDT minimum
     
     if (amount < minWithdrawal) {
@@ -952,11 +952,9 @@ export default function WalletPage() {
             </p>
           </div>
           <div>
-            <p className="text-gray-500 text-xs mb-1">{selectedAsset === 'BTC' || selectedAsset === 'B2B' ? 'USD Value' : ''}</p>
+            <p className="text-gray-500 text-xs mb-1">{selectedAsset === 'BTC' ? 'USD Value' : ''}</p>
             <p className="text-white font-medium">
-              {selectedAsset === 'BTC' ? `$${(btcBalance * btcPrice).toFixed(2)}` : 
-               selectedAsset === 'B2B' ? `$${(gbtcBalance * 1).toFixed(2)}` : 
-               ''}
+              {selectedAsset === 'BTC' ? `$${(btcBalance * btcPrice).toFixed(2)}` : ''}
             </p>
           </div>
         </div>
@@ -1320,15 +1318,17 @@ export default function WalletPage() {
                   type="number"
                   value={withdrawAmount}
                   onChange={(e) => setWithdrawAmount(e.target.value)}
-                  placeholder={selectedAsset === 'B2B' ? "0.00000000" : "0.00"}
-                  step={selectedAsset === 'B2B' ? "0.00000001" : "0.01"}
-                  max={selectedAsset === 'B2B' ? gbtcBalance || 0 : usdtBalance || 0}
+                  placeholder={selectedAsset === 'USDT' ? "0.00" : "0.00000000"}
+                  step={selectedAsset === 'USDT' ? "0.01" : "0.00000001"}
+                  max={selectedAsset === 'B2B' ? gbtcBalance || 0 : selectedAsset === 'BTC' ? btcBalance || 0 : usdtBalance || 0}
                   className="bg-[#1a1a1a] border-gray-700 text-white placeholder:text-gray-600 mt-2"
                   data-testid="input-withdraw-amount"
                 />
                 <p className="text-xs text-gray-500 mt-2">
                   Available: {selectedAsset === 'B2B' 
                     ? `${gbtcBalance.toFixed(8)} B2B` 
+                    : selectedAsset === 'BTC' 
+                    ? `${btcBalance.toFixed(8)} BTC` 
                     : `${usdtBalance.toFixed(2)} USDT`}
                 </p>
               </div>
