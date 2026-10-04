@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Copy, LogOut, Users, Activity, TrendingUp, Gift, Hash, DollarSign, CheckCircle2, Loader2 } from "lucide-react";
+import { Shield, Copy, LogOut, Users, Activity, TrendingUp, Gift, Hash, DollarSign, CheckCircle2, Loader2, FileText, Bitcoin, Zap, Calendar, Key, ChevronRight } from "lucide-react";
+import { Link } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -209,6 +210,118 @@ export default function AccountPage() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-4">
+            {/* Profile Info Card */}
+            <Card className="mobile-card">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Users className="w-4 h-4 text-primary" />
+                  Profile
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Account details */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" /> Member Since
+                    </span>
+                    <span className="font-medium">
+                      {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5" /> Access Key
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">
+                        {user?.accessKey?.slice(0, 8)}...
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0"
+                        onClick={() => {
+                          navigator.clipboard.writeText(user?.accessKey || '');
+                          toast({ title: "Copied!", description: "Access key copied to clipboard" });
+                        }}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Account status badges */}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {user?.isFrozen && (
+                    <Badge variant="destructive" className="text-xs">
+                      <Shield className="w-3 h-3 mr-1" /> Frozen
+                    </Badge>
+                  )}
+                  {user?.isBanned && (
+                    <Badge variant="destructive" className="text-xs">
+                      Banned
+                    </Badge>
+                  )}
+                  {user?.miningSuspended && (
+                    <Badge variant="secondary" className="text-xs">
+                      Mining Suspended
+                    </Badge>
+                  )}
+                  {user?.miningActive && !user?.miningSuspended && !user?.isFrozen && !user?.isBanned && (
+                    <Badge className="text-xs bg-green-500/20 text-green-500">
+                      <Activity className="w-3 h-3 mr-1" /> Active
+                    </Badge>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Mining Stats Card */}
+            <Card className="mobile-card">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-primary" />
+                  Mining Stats
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-background rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Zap className="w-3 h-3" /> Hash Power
+                    </p>
+                    <p className="text-lg font-bold text-primary">
+                      {formatHashPower(parseFloat(user?.hashPower || '0') * 1000)}
+                    </p>
+                  </div>
+                  <div className="bg-background rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Hash className="w-3 h-3" /> Block Height
+                    </p>
+                    <p className="text-lg font-bold">{user?.personalBlockHeight || 0}</p>
+                  </div>
+                  <div className="bg-background rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Bitcoin className="w-3 h-3" /> B2B Balance
+                    </p>
+                    <p className="text-lg font-bold text-[#F7931A]">
+                      {parseFloat(user?.b2bBalance || '0').toFixed(4)}
+                    </p>
+                  </div>
+                  <div className="bg-background rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <DollarSign className="w-3 h-3" /> USDT Balance
+                    </p>
+                    <p className="text-lg font-bold text-green-500">
+                      ${parseFloat(user?.usdtBalance || '0').toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Referral Statistics Card */}
             <Card className="mobile-card bg-gradient-to-br from-primary/5 to-transparent">
               <CardHeader className="pb-3">
@@ -413,6 +526,25 @@ export default function AccountPage() {
 
           {/* Settings Tab */}
           <TabsContent value="settings" className="space-y-3">
+            {/* Whitepaper */}
+            <Link href="/whitepaper">
+              <Card 
+                className="mobile-card cursor-pointer hover:border-primary/50 transition-colors"
+                data-testid="button-whitepaper"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-primary" />
+                    <div>
+                      <p className="font-semibold">Whitepaper</p>
+                      <p className="text-xs text-muted-foreground">Read the B2B technical paper</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </div>
+              </Card>
+            </Link>
+
             {/* Security PIN */}
             <Card 
               className="mobile-card cursor-pointer hover:border-primary/50 transition-colors"
@@ -427,7 +559,7 @@ export default function AccountPage() {
                     <p className="text-xs text-muted-foreground">Change your 6-digit PIN</p>
                   </div>
                 </div>
-                <span className="text-xs text-muted-foreground">›</span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </div>
             </Card>
 
