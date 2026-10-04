@@ -62,7 +62,7 @@ export default function WalletPage() {
   const [depositAmount, setDepositAmount] = useState("");
   const [depositTxHash, setDepositTxHash] = useState("");
   const [copiedAddress, setCopiedAddress] = useState(false);
-  const [selectedTransfer, setSelectedTransfer] = useState<any>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
   const [currentUTCTime, setCurrentUTCTime] = useState("");
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [convertFrom, setConvertFrom] = useState<'BTC' | 'USDT'>('BTC');
@@ -306,8 +306,8 @@ export default function WalletPage() {
         });
       });
     } else if (selectedAsset === 'USDT') {
-      // For USDT, only show USDT transactions
-      transactions.deposits?.filter(d => d.currency === 'USDT' || (!d.currency && d.network !== 'BTC' && d.network !== 'B2B')).forEach(d => {
+      // For USDT, only show USDT transactions — strict currency filter
+      transactions.deposits?.filter(d => d.currency === 'USDT').forEach(d => {
         allTransactions.push({
           ...d,
           displayType: 'Deposit',
@@ -315,7 +315,7 @@ export default function WalletPage() {
         });
       });
       
-      transactions.withdrawals?.filter(w => w.currency === 'USDT' || (!w.currency && w.network !== 'BTC' && w.network !== 'B2B')).forEach(w => {
+      transactions.withdrawals?.filter(w => w.currency === 'USDT').forEach(w => {
         allTransactions.push({
           ...w,
           displayType: 'Withdraw',
@@ -323,8 +323,8 @@ export default function WalletPage() {
         });
       });
     } else if (selectedAsset === 'BTC') {
-      // For BTC, only show BTC transactions
-      transactions.deposits?.filter(d => d.currency === 'BTC' || d.network === 'BTC').forEach(d => {
+      // For BTC, only show BTC transactions — strict currency filter
+      transactions.deposits?.filter(d => d.currency === 'BTC').forEach(d => {
         allTransactions.push({
           ...d,
           displayType: 'Deposit',
@@ -332,7 +332,7 @@ export default function WalletPage() {
         });
       });
       
-      transactions.withdrawals?.filter(w => w.currency === 'BTC' || w.network === 'BTC').forEach(w => {
+      transactions.withdrawals?.filter(w => w.currency === 'BTC').forEach(w => {
         allTransactions.push({
           ...w,
           displayType: 'Withdraw',
@@ -387,6 +387,7 @@ export default function WalletPage() {
       const res = await apiRequest("POST", "/api/withdrawals", {
         amount: data.amount,
         address: data.address,
+        currency: selectedAsset,
         network: selectedAsset === 'USDT' ? 'ERC20' : selectedAsset === 'BTC' ? 'BTC' : 'B2B'
       });
       return res.json();
@@ -1021,12 +1022,7 @@ export default function WalletPage() {
                   key={tx.id} 
                   className="p-3 bg-[#242424] border-gray-800 cursor-pointer hover:bg-[#2a2a2a]"
                   data-testid={`transaction-${tx.id}`}
-                  onClick={() => {
-                    // Only show details for B2B transfers
-                    if (selectedAsset === 'B2B' && (tx.displayType === 'Transfer Out' || tx.displayType === 'Transfer In')) {
-                      setSelectedTransfer(tx);
-                    }
-                  }}
+                  onClick={() => setSelectedReceipt(tx)}
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -1530,52 +1526,114 @@ export default function WalletPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Transfer Details Dialog */}
-      <Dialog 
-        open={!!selectedTransfer} 
+      {/* Unified Receipt Dialog */}
+      <Dialog
+        open={!!selectedReceipt}
         onOpenChange={(open) => {
           if (!open) {
-            setTimeout(() => setSelectedTransfer(null), 50); // Instant close
+            setTimeout(() => setSelectedReceipt(null), 50);
           }
         }}
       >
         <DialogContent className="sm:max-w-md bg-[#1a1a1a] border-gray-800">
           <DialogHeader>
             <DialogTitle className="text-white font-medium text-center">
-              {selectedTransfer?.displayType === 'Transfer In' ? 'Transfer In Details' : 'Transfer Out Details'}
+              Receipt
             </DialogTitle>
           </DialogHeader>
-          {selectedTransfer && (
-            <div className="space-y-6 py-4">
-              <div className="space-y-1">
-                <p className="text-gray-500 text-sm">Amount</p>
-                <p className="text-white font-mono text-lg">
-                  B2B {safeParseFloat(selectedTransfer.amount).toFixed(8)}
-                </p>
+          {selectedReceipt && (
+            <div className="space-y-4 py-2">
+              {/* Type badge */}
+              <div className="flex items-center justify-center">
+                <span className={`px-4 py-1.5 rounded-full text-sm font-medium ${
+                  selectedReceipt.displayType === 'Deposit' ? 'bg-green-900/40 text-green-400' :
+                  selectedReceipt.displayType === 'Withdraw' ? 'bg-orange-900/40 text-orange-400' :
+                  selectedReceipt.displayType === 'Transfer Out' ? 'bg-red-900/40 text-red-400' :
+                  selectedReceipt.displayType === 'Transfer In' ? 'bg-green-900/40 text-green-400' :
+                  'bg-blue-900/40 text-blue-400'
+                }`}>
+                  {selectedReceipt.displayType}
+                </span>
               </div>
-              
-              <div className="space-y-1">
-                <p className="text-gray-500 text-sm">Status</p>
-                <p className="text-white">
-                  {selectedTransfer.status === 'approved' ? 'Completed' : selectedTransfer.status}
-                </p>
+
+              {/* Status with pending indicator */}
+              <div className="flex items-center justify-between bg-[#242424] rounded-lg p-3">
+                <span className="text-gray-500 text-sm">Status</span>
+                <div className="flex items-center gap-2">
+                  {selectedReceipt.status === 'pending' && (
+                    <Clock className="w-4 h-4 text-yellow-500" />
+                  )}
+                  {selectedReceipt.status === 'approved' && (
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                  )}
+                  {selectedReceipt.status === 'rejected' && (
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                  )}
+                  <span className={`text-sm font-medium capitalize ${getStatusColor(selectedReceipt.status)}`}>
+                    {selectedReceipt.status === 'approved' ? 'Completed' : selectedReceipt.status}
+                  </span>
+                </div>
               </div>
-              
-              <div className="space-y-1">
-                <p className="text-gray-500 text-sm">Transfer Account</p>
-                <p className="text-white">
-                  {selectedTransfer.displayType === 'Transfer In' 
-                    ? selectedTransfer.fromUsername 
-                    : selectedTransfer.toUsername}
-                </p>
+
+              {/* Amount */}
+              <div className="flex items-center justify-between bg-[#242424] rounded-lg p-3">
+                <span className="text-gray-500 text-sm">Amount</span>
+                <span className="text-white font-mono font-medium">
+                  {selectedReceipt.displayAmount} {selectedAsset}
+                </span>
               </div>
-              
-              <div className="space-y-1">
-                <p className="text-gray-500 text-sm">Time</p>
-                <p className="text-white">
-                  {formatDate(selectedTransfer.createdAt)}
-                </p>
+
+              {/* Address (for deposits & withdrawals) */}
+              {selectedReceipt.address && (
+                <div className="bg-[#242424] rounded-lg p-3">
+                  <p className="text-gray-500 text-sm mb-1">
+                    {selectedReceipt.displayType === 'Withdraw' ? 'Withdrawal Address' : 'Deposit Address'}
+                  </p>
+                  <p className="text-white font-mono text-xs break-all">
+                    {selectedReceipt.address}
+                  </p>
+                </div>
+              )}
+
+              {/* Transfer account (for transfers) */}
+              {(selectedReceipt.displayType === 'Transfer Out' || selectedReceipt.displayType === 'Transfer In') && (
+                <div className="flex items-center justify-between bg-[#242424] rounded-lg p-3">
+                  <span className="text-gray-500 text-sm">
+                    {selectedReceipt.displayType === 'Transfer In' ? 'From' : 'To'}
+                  </span>
+                  <span className="text-white text-sm">
+                    {selectedReceipt.displayType === 'Transfer In'
+                      ? selectedReceipt.fromUsername
+                      : selectedReceipt.toUsername}
+                  </span>
+                </div>
+              )}
+
+              {/* Network */}
+              {selectedReceipt.network && (
+                <div className="flex items-center justify-between bg-[#242424] rounded-lg p-3">
+                  <span className="text-gray-500 text-sm">Network</span>
+                  <span className="text-white text-sm">{selectedReceipt.network}</span>
+                </div>
+              )}
+
+              {/* Time */}
+              <div className="flex items-center justify-between bg-[#242424] rounded-lg p-3">
+                <span className="text-gray-500 text-sm">Time (UTC)</span>
+                <span className="text-white text-sm">{formatDate(selectedReceipt.createdAt)}</span>
               </div>
+
+              {/* Pending notice */}
+              {selectedReceipt.status === 'pending' && (
+                <div className="flex items-start gap-2 bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-3">
+                  <Clock className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
+                  <p className="text-yellow-400 text-xs">
+                    {selectedReceipt.displayType === 'Withdraw'
+                      ? 'Your withdrawal is being processed. Please allow 24-48 hours for completion.'
+                      : 'This transaction is pending approval.'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

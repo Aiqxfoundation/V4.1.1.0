@@ -1028,8 +1028,18 @@ export async function registerRoutes(app: Express) {
       }
 
       const withdrawalData = insertWithdrawalSchema.parse(req.body);
+      
+      // Derive currency from network — the schema omits currency so the DB
+      // default would always be "USDT", causing BTC/B2B withdrawals to appear
+      // in the USDT transaction list. Set it explicitly here.
+      const network = withdrawalData.network;
+      let currency = 'USDT';
+      if (network === 'BTC') currency = 'BTC';
+      else if (network === 'B2B') currency = 'B2B';
+      
       const withdrawal = await storage.createWithdrawal({
         ...withdrawalData,
+        currency,
         userId: req.user!.id
       });
 
@@ -2348,6 +2358,7 @@ export async function registerRoutes(app: Express) {
         amount,
         address,
         network: "BTC",
+        currency: "BTC",
         userId: user.id
       });
       
