@@ -1797,33 +1797,41 @@ export async function registerRoutes(app: Express) {
         return res.status(403).json({ message: "Your account is frozen. Mining and rewards are suspended." });
       }
       
-      // Calculate pending rewards using the global index (O(1) calculation)
+      // Step 1: Claim unclaimed blocks from the unclaimed_blocks table
+      const blockClaimResult = await storage.claimAllBlocks(userId);
+      const blockReward = parseFloat(blockClaimResult.totalReward || '0');
+      const blocksClaimedCount = blockClaimResult.count;
+      
+      // Step 2: Also calculate pending rewards from the global index system
       const pending = await storage.calculateUserPending(userId);
       const pendingFloat = parseFloat(pending);
       
-      if (pendingFloat === 0) {
+      const totalClaimed = blockReward + pendingFloat;
+      
+      if (totalClaimed === 0) {
         return res.status(400).json({ 
           message: "No unclaimed rewards available",
           claimedAmount: "0",
-          newBalance: req.user!.b2bBalance || "0"
+          newBalance: req.user!.b2bBalance || "0",
+          blocksClaimedCount: 0,
+          wasMiningSuspended: false
         });
       }
       
-      const globalState = await storage.getGlobalMiningState();
-      
-      // Claim rewards and update user state atomically
-      await db.transaction(async (tx) => {
-        // Add pending to balance and reset tracking
-        await tx.update(users).set({
-          b2bBalance: sql`COALESCE(b2b_balance, '0')::decimal + ${pending}::decimal`,
-          accruedPending: "0",
-          userIndex: globalState.globalRewardIndex,
-          unclaimedBlocksCount: 0,
-          miningSuspended: false,
-          suspensionAtBlock: globalState.currentBlock + 24,
-          lastActiveBlock: globalState.currentBlock
-        }).where(eq(users.id, userId));
-      });
+      // If there are pending index rewards, add them to the balance
+      // (block rewards were already added by claimAllBlocks)
+      if (pendingFloat > 0) {
+        const globalState = await storage.getGlobalMiningState();
+        await db.transaction(async (tx) => {
+          await tx.update(users).set({
+            b2bBalance: sql`COALESCE(b2b_balance, '0')::decimal + ${pending}::decimal`,
+            accruedPending: "0",
+            userIndex: globalState.globalRewardIndex,
+            suspensionAtBlock: globalState.currentBlock + 24,
+            lastActiveBlock: globalState.currentBlock
+          }).where(eq(users.id, userId));
+        });
+      }
       
       // Get updated user data for new balance
       const updatedUser = await storage.getUser(userId);
@@ -1832,18 +1840,19 @@ export async function registerRoutes(app: Express) {
       }
       
       // Prepare response
-      const wasMiningSuspended = req.user!.miningSuspended || false;
+      const wasMiningSuspended = req.user!.miningSuspended || blockClaimResult.suspended || false;
       let message: string;
       if (wasMiningSuspended) {
-        message = `Mining reactivated! Claimed ${pendingFloat.toFixed(8)} B2B. You will now receive rewards from future blocks.`;
+        message = `Mining reactivated! Claimed ${totalClaimed.toFixed(8)} B2B (${blocksClaimedCount} blocks). You will now receive rewards from future blocks.`;
       } else {
-        message = `Successfully claimed ${pendingFloat.toFixed(8)} B2B`;
+        message = `Successfully claimed ${totalClaimed.toFixed(8)} B2B (${blocksClaimedCount} blocks)`;
       }
       
       res.json({
         message,
-        claimedAmount: pending,
+        claimedAmount: totalClaimed.toFixed(8),
         newBalance: updatedUser.b2bBalance || "0",
+        blocksClaimedCount,
         wasMiningSuspended
       });
       

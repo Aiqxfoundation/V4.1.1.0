@@ -168,6 +168,7 @@ export default function MiningDashboard() {
       // Refresh user data and mining status
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mining/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mining/unclaimed-blocks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/wallet/balances"] });
       
       // Reset mining animation if it was suspended
@@ -202,7 +203,8 @@ export default function MiningDashboard() {
   // hashPower is stored in MH/s units (1 hashPower = 1 MH/s = 1000 KH/s)
   const baseHashrate = parseFloat(user?.hashPower || '0');
   const currentMode = miningModes[selectedMiningMode];
-  const myHashrate = baseHashrate * currentMode.hashMultiplier;
+  // Show exact user hashrate - no mode multiplier on the display
+  const myHashrate = baseHashrate;
   // Use actual total network hashrate from server (in MH/s), fall back to user's hashrate if no data
   const globalHashrate = supplyMetrics?.totalHashrate && supplyMetrics.totalHashrate > 0
     ? supplyMetrics.totalHashrate
@@ -210,13 +212,22 @@ export default function MiningDashboard() {
   // Network growth rate is not reported by the API; default to 1 (0%/hr) until available
   const networkGrowthRate = 1;
 
+  // Calculate total unclaimed block rewards from the unclaimed blocks data
+  const unclaimedBlocksTotal = useMemo(() => {
+    if (!unclaimedBlocks || !Array.isArray(unclaimedBlocks)) return 0;
+    return unclaimedBlocks.reduce((sum: number, block: any) => {
+      return sum + parseFloat(block.reward || block.userReward || block.user_reward || '0');
+    }, 0);
+  }, [unclaimedBlocks]);
+
   // Memoized reward calculations for performance
   const rewardCalculations = useMemo(() => {
     const currentBlockReward = 3200; // B2B per block
     const myMiningShare = myHashrate > 0 ? Math.round((myHashrate / globalHashrate) * 100 * 1000000) / 1000000 : 0; // Percentage with 6 decimals precision
     const myEstimatedReward = Math.round((myHashrate / globalHashrate) * currentBlockReward * 100000000) / 100000000; // B2B per block with 8 decimals
     const dailyEstimatedRewards = Math.round(myEstimatedReward * 144 * 10000) / 10000; // 144 blocks per day with 4 decimals
-    const unclaimedB2B = parseFloat(user?.unclaimedBalance || '0');
+    // Use the sum of unclaimed block rewards, not the unclaimedBalance field
+    const unclaimedB2B = unclaimedBlocksTotal;
     const isNewUser = myHashrate === 0;
     
     return {
@@ -227,7 +238,7 @@ export default function MiningDashboard() {
       unclaimedB2B,
       isNewUser
     };
-  }, [myHashrate, globalHashrate, user?.unclaimedBalance]);
+  }, [myHashrate, globalHashrate, unclaimedBlocksTotal]);
   
   // Destructure for backward compatibility
   const { currentBlockReward, myMiningShare, myEstimatedReward, dailyEstimatedRewards, unclaimedB2B, isNewUser } = rewardCalculations;
@@ -331,10 +342,10 @@ export default function MiningDashboard() {
   const formattedBlocks = useMemo(() => {
     if (!unclaimedBlocks || !Array.isArray(unclaimedBlocks)) return [];
     return unclaimedBlocks.map((block: any) => ({
-      blockHeight: block.blockHeight || block.block_height,
-      totalReward: block.totalReward || block.total_reward || '50',
-      userShare: block.userReward || block.user_reward || '0',
-      timestamp: block.timestamp || block.created_at || new Date().toISOString(),
+      blockHeight: block.blockNumber || block.block_number || block.blockHeight || block.block_height,
+      totalReward: block.reward || block.totalReward || block.total_reward || '0',
+      userShare: block.reward || block.userReward || block.user_reward || '0',
+      timestamp: block.blockTime || block.created_at || block.timestamp || new Date().toISOString(),
       claimed: block.claimed || false,
       globalHashrate: block.globalHashrate,
       participantsCount: block.participantsCount

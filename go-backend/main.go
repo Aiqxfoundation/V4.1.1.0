@@ -606,9 +606,9 @@ func handleUnclaimedBlocks(w http.ResponseWriter, r *http.Request) {
 
         rows, err := database.GetDB().Query(r.Context(), `
                 SELECT ub.id, ub.block_number, ub.reward, ub.created_at,
-                       mb.timestamp as block_time
+                       COALESCE(mb.timestamp, ub.created_at) as block_time
                 FROM unclaimed_blocks ub
-                JOIN mining_blocks mb ON mb.block_number = ub.block_number
+                LEFT JOIN mining_blocks mb ON mb.block_number = ub.block_number
                 WHERE ub.user_id = $1 AND ub.claimed = false
                 ORDER BY ub.block_number DESC
         `, user.ID)
