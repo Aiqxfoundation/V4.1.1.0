@@ -2325,8 +2325,8 @@ export async function registerRoutes(app: Express) {
       
       res.json({ message: "BTC deposit submitted for approval", deposit });
     } catch (error: any) {
-      if (error?.message?.includes('duplicate key')) {
-        return res.status(400).json({ message: "Transaction hash already submitted" });
+      if (error?.code === '23505' || error?.message?.includes('duplicate key') || error?.message?.includes('deposits_tx_hash_unique') || error?.message?.includes('unique constraint')) {
+        return res.status(400).json({ message: "This transaction hash has already been submitted. Please check your transaction and try again with a different hash." });
       }
       next(error);
     }

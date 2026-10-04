@@ -11,16 +11,16 @@ export const users = pgTable("users", {
   referralCode: text("referral_code").unique(),
   referredBy: text("referred_by"), // Referral code of the user who referred them
   registrationIp: text("registration_ip"), // IP address that created this account
-  usdtBalance: decimal("usdt_balance", { precision: 10, scale: 2 }).default("0.00"),
+  usdtBalance: decimal("usdt_balance", { precision: 18, scale: 2 }).default("0.00"),
   btcBalance: decimal("btc_balance", { precision: 18, scale: 8 }).default("0.00000000"), // BTC balance
   hashPower: decimal("hash_power", { precision: 10, scale: 2 }).default("0.00"),
   baseHashPower: decimal("base_hash_power", { precision: 10, scale: 2 }).default("0.00"), // User's own hash power
   referralHashBonus: decimal("referral_hash_bonus", { precision: 10, scale: 2 }).default("0.00"), // 5% from active referrals
   b2bBalance: decimal("b2b_balance", { precision: 18, scale: 8 }).default("0.00000000"),
   unclaimedBalance: decimal("unclaimed_balance", { precision: 18, scale: 8 }).default("0.00000000"),
-  totalReferralEarnings: decimal("total_referral_earnings", { precision: 10, scale: 2 }).default("0.00"),
+  totalReferralEarnings: decimal("total_referral_earnings", { precision: 18, scale: 2 }).default("0.00"),
   totalReferralCodes: integer("total_referral_codes").default(0), // total codes generated
-  unclaimedReferralUsdt: decimal("unclaimed_referral_usdt", { precision: 10, scale: 2 }).default("0.00"), // pending USDT rewards
+  unclaimedReferralUsdt: decimal("unclaimed_referral_usdt", { precision: 18, scale: 2 }).default("0.00"), // pending USDT rewards
   unclaimedReferralHash: decimal("unclaimed_referral_hash", { precision: 10, scale: 2 }).default("0.00"), // pending hashrate rewards
   lastActiveBlock: integer("last_active_block"), // Last block user was active in
   personalBlockHeight: integer("personal_block_height").default(0), // User's current block number
