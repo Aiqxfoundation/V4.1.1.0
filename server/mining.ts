@@ -254,6 +254,10 @@ export async function forceGenerateBlock() {
   if (!isProcessingBlock) {
     isProcessingBlock = true;
     try {
+      // Ensure totalBlockHeight is loaded from DB (setupMining may be disabled)
+      if (totalBlockHeight === 0) {
+        await initializeSettings();
+      }
       await generateAndDistributeBlock();
     } catch (error) {
       console.error("Error in forced block generation:", error);

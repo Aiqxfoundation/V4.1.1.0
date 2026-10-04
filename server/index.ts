@@ -20,7 +20,6 @@ app.use(express.urlencoded({ extended: false }));
     const message = err.message || "Internal Server Error";
 
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after

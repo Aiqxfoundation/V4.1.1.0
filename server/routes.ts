@@ -1,8 +1,7 @@
-import { Router } from "express";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
-import { setupMining, forceGenerateBlock } from "./mining";
+import { forceGenerateBlock } from "./mining";
 import type { Request, Response, NextFunction, Express } from "express";
 import { insertDepositSchema, insertWithdrawalSchema, insertDeviceFingerprintSchema, users } from "@shared/schema";
 import { createServer } from "http";
@@ -214,43 +213,7 @@ export async function registerRoutes(app: Express) {
     }
   });
   
-  // Get user endpoint with hash zeroing for suspended/frozen users
-  app.get("/api/user", async (req, res, next) => {
-    try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
-      const userId = req.user!.id;
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      // If user is frozen or mining suspended, zero out hash power in response only
-      // This preserves the original values for when the user is unfrozen
-      if (user.isFrozen === true || user.miningSuspended === true) {
-        // Log for debugging
-        if (user.isFrozen || user.miningSuspended) {
-          console.log(`Frozen/suspended user ${user.username} logged in - mining/rewards suspended`);
-        }
-        
-        res.json({
-          ...user,
-          hashPower: "0.00",
-          baseHashPower: "0.00",
-          referralHashBonus: "0.00",
-          lockedHashPower: "0.00",
-          nextBlockHashPower: "0.00"
-        });
-      } else {
-        res.json(user);
-      }
-    } catch (error) {
-      next(error);
-    }
-  });
+  // NOTE: /api/user is handled in auth.ts (setupAuth) — no duplicate here
   
   // Get wallet balances with proper decimal precision
   app.get("/api/wallet/balances", async (req, res, next) => {
@@ -1057,20 +1020,6 @@ export async function registerRoutes(app: Express) {
   });
 
 
-  // Admin endpoint for all withdrawals
-  app.get("/api/admin/withdrawals", async (req, res, next) => {
-    try {
-      if (!req.isAuthenticated() || !req.user!.isAdmin) {
-        return res.status(403).json({ message: "Admin access required" });
-      }
-
-      const withdrawals = await storage.getAllWithdrawals();
-      res.json(withdrawals);
-    } catch (error) {
-      next(error);
-    }
-  });
-  
   // Withdrawal endpoints
   app.post("/api/withdrawals", async (req, res, next) => {
     try {

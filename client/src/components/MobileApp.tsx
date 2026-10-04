@@ -25,6 +25,7 @@ import TransactionsPage from "@/pages/transactions-page";
 import Whitepaper from "@/pages/whitepaper";
 import GlobalPage from "@/pages/global-page";
 import BtcMiningPage from "@/pages/btc-mining";
+import NotFound from "@/pages/not-found";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AdminProtectedRoute } from "@/lib/admin-protected-route";
 import LoadingScreen from "./LoadingScreen";
@@ -139,6 +140,7 @@ export default function MobileApp() {
           <AdminProtectedRoute path="/admin/deposits" component={AdminDeposits} />
           <AdminProtectedRoute path="/admin/withdrawals" component={AdminWithdrawals} />
           <AdminProtectedRoute path="/admin/addresses" component={AdminAddresses} />
+          <Route component={NotFound} />
         </Switch>
       </div>
 

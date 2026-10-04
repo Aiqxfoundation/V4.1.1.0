@@ -9,6 +9,7 @@ import (
         "crypto/sha256"
         "database/sql"
         "encoding/base64"
+        "encoding/hex"
         "encoding/json"
         "fmt"
         "log"
@@ -545,7 +546,7 @@ func handleClaimAllRewards(w http.ResponseWriter, r *http.Request) {
 
         writeJSONResponse(w, http.StatusOK, map[string]interface{}{
                 "success":          true,
-                "blocksClmed":    blockCount,
+                "blocksClaimed":   blockCount,
                 "totalReward":     totalReward.String(),
                 "newB2BBalance":   newB2BBalance.String(),
                 "unclaimedBalance": "0",
@@ -747,8 +748,9 @@ func handleGlobalStats(w http.ResponseWriter, r *http.Request) {
         database.GetDB().QueryRow(r.Context(),
                 "SELECT COALESCE(SUM(reward), 0)::text FROM mining_blocks").Scan(&totalCirculation)
 
-        // Calculate current block reward
-        halvings := blockHeight / 210000
+        // Calculate current block reward (halving interval = 2160 blocks, matching Node.js mining.ts)
+        halvingInterval := int64(2160)
+        halvings := blockHeight / halvingInterval
         divisor := int64(1 << halvings)
         currentReward := decimal.NewFromFloat(3200).Div(decimal.NewFromInt(divisor))
 
@@ -759,8 +761,8 @@ func handleGlobalStats(w http.ResponseWriter, r *http.Request) {
                 "blockReward":         currentReward.String(),
                 "totalCirculation":    totalCirculation,
                 "maxSupply":           21000000,
-                "nextHalving":         ((blockHeight/210000)+1)*210000,
-                "blocksUntilHalving":  ((blockHeight/210000)+1)*210000 - blockHeight,
+                "nextHalving":         ((blockHeight/halvingInterval)+1)*halvingInterval,
+                "blocksUntilHalving":  ((blockHeight/halvingInterval)+1)*halvingInterval - blockHeight,
         }
 
         writeJSONResponse(w, http.StatusOK, stats)
@@ -856,12 +858,16 @@ func getUserByUsername(ctx context.Context, username string) (*User, error) {
 
 func authMiddleware(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                // Try session cookie first, then fall back to X-User-ID header
+                // (used by the Express proxy for internal service-to-service calls)
                 session, _ := store.Get(r, "session")
-
                 userID, ok := session.Values["user_id"].(string)
                 if !ok || userID == "" {
-                        writeErrorResponse(w, http.StatusUnauthorized, "Authentication required")
-                        return
+                        userID = r.Header.Get("X-User-ID")
+                        if userID == "" {
+                                writeErrorResponse(w, http.StatusUnauthorized, "Authentication required")
+                                return
+                        }
                 }
 
                 user, err := getUserByID(r.Context(), userID)
@@ -875,10 +881,8 @@ func authMiddleware(next http.Handler) http.Handler {
                         return
                 }
 
-                if user.IsFrozen {
-                        writeErrorResponse(w, http.StatusForbidden, "Account is frozen")
-                        return
-                }
+                // Note: frozen users are allowed through middleware so the handler
+                // can return appropriate zeroed data (matching Node.js behavior)
 
                 ctx := context.WithValue(r.Context(), "user", user)
                 next.ServeHTTP(w, r.WithContext(ctx))
@@ -1040,12 +1044,13 @@ func verifyAccessKey(hashedKey, plainKey string) bool {
                 return false
         }
 
-        storedHash, err := base64.StdEncoding.DecodeString(parts[0])
+        // Node.js stores as hex-encoded salt:hash (not base64)
+        storedHash, err := hex.DecodeString(parts[1])
         if err != nil {
                 return false
         }
 
-        salt, err := base64.StdEncoding.DecodeString(parts[1])
+        salt, err := hex.DecodeString(parts[0])
         if err != nil {
                 return false
         }

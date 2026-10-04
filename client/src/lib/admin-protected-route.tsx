@@ -33,7 +33,7 @@ export function AdminProtectedRoute({
   if (!user.isAdmin) {
     return (
       <Route path={path}>
-        <Redirect to="/home" />
+        <Redirect to="/" />
       </Route>
     );
   }
