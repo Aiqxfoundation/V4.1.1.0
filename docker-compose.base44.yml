@@ -37,7 +37,9 @@ services:
                  /migrations/0001_permanent_rewards_suspension.sql \
                  /migrations/0002_global_index_system.sql \
                  /migrations/0003_user_address_assignments.sql \
-                 /migrations/0004_add_security_pin.sql; do
+                 /migrations/0004_add_security_pin.sql \
+                 /migrations/0005_btc_conversions.sql \
+                 /migrations/0006_mining_blocks_unique.sql; do
           name=$$(basename "$$f")
           applied=$$(psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "SELECT count(*) FROM base44_schema_migrations WHERE name='$$name'")
           if [ "$$applied" = "1" ]; then
