@@ -416,78 +416,96 @@ export class DatabaseStorage implements IStorage {
   }
 
   async approveDeposit(depositId: string, adminNote?: string, actualAmount?: string): Promise<void> {
-    // Get the deposit first
-    const [deposit] = await db
-      .select()
-      .from(deposits)
-      .where(eq(deposits.id, depositId));
-    
-    if (!deposit) throw new Error("Deposit not found");
-    
-    // Use actualAmount if provided (admin verified amount), otherwise use original amount
-    const amountToCredit = actualAmount || deposit.amount;
-    
-    // Update deposit status and amount if actualAmount provided
-    await db
-      .update(deposits)
-      .set({ 
-        status: "completed", 
-        adminNote, 
-        amount: amountToCredit,
-        updatedAt: new Date() 
-      })
-      .where(eq(deposits.id, depositId));
-    
-    // Update user balance with the verified amount
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, deposit.userId));
-    
-    if (user) {
-      // Update USDT balance for all deposits (BTC mining platform supports USDT deposits only)
-      const newBalance = (parseFloat(user.usdtBalance || "0") + parseFloat(amountToCredit)).toFixed(2);
-      await db
-        .update(users)
-        .set({ usdtBalance: newBalance })
+    await db.transaction(async (tx) => {
+      // Get the deposit first (lock row for update to prevent race conditions)
+      const [deposit] = await tx
+        .select()
+        .from(deposits)
+        .where(eq(deposits.id, depositId))
+        .for("update");
+
+      if (!deposit) throw new Error("Deposit not found");
+
+      // Prevent double-approval: if already completed, do nothing
+      if (deposit.status === "completed") {
+        throw new Error("Deposit has already been approved");
+      }
+
+      // Use actualAmount if provided (admin verified amount), otherwise use original amount
+      const amountToCredit = actualAmount || deposit.amount;
+
+      // Update deposit status and amount
+      await tx
+        .update(deposits)
+        .set({
+          status: "completed",
+          adminNote,
+          amount: amountToCredit,
+          updatedAt: new Date()
+        })
+        .where(eq(deposits.id, depositId));
+
+      // Get user
+      const [user] = await tx
+        .select()
+        .from(users)
         .where(eq(users.id, deposit.userId));
-        
-      // Check if this user was referred and credit commission to referrer
-      if (user.referredBy) {
-        const referrer = await this.findUserByOwnReferralCode(user.referredBy);
-        if (referrer) {
-          // Calculate 10% commission on the deposit
-          const commission = (parseFloat(amountToCredit) * 0.10).toFixed(2);
-          
-          // Update referrer's total earnings and USDT balance
-          const newReferrerUsdtBalance = (parseFloat(referrer.usdtBalance || "0") + parseFloat(commission)).toFixed(2);
-          const newTotalEarnings = (parseFloat(referrer.totalReferralEarnings || "0") + parseFloat(commission)).toFixed(2);
-          
-          await db
-            .update(users)
-            .set({ 
-              usdtBalance: newReferrerUsdtBalance,
-              totalReferralEarnings: newTotalEarnings
-            })
-            .where(eq(users.id, referrer.id));
-            
-          // Create referral reward record (mark as claimed since we credited immediately)
-          const reward = await this.createReferralReward({
-            referrerId: referrer.id,
-            referredUserId: user.id,
-            usdtReward: commission,
-            hashReward: "0",
-            purchaseAmount: amountToCredit,
-            purchaseHashrate: "0"
-          });
-          
-          // Mark as claimed immediately
-          await db.update(referralRewards)
-            .set({ isClaimed: true, claimedAt: new Date() })
-            .where(eq(referralRewards.id, reward.id));
+
+      if (user) {
+        // Credit the correct balance based on deposit currency
+        const currency = deposit.currency || "USDT";
+        if (currency === "BTC") {
+          const newBtcBalance = (parseFloat(user.btcBalance || "0") + parseFloat(amountToCredit)).toFixed(8);
+          await tx.update(users)
+            .set({ btcBalance: newBtcBalance })
+            .where(eq(users.id, deposit.userId));
+        } else {
+          // USDT (and any other currency) credits to usdtBalance
+          const newBalance = (parseFloat(user.usdtBalance || "0") + parseFloat(amountToCredit)).toFixed(2);
+          await tx.update(users)
+            .set({ usdtBalance: newBalance })
+            .where(eq(users.id, deposit.userId));
+        }
+
+        // Check if this user was referred and credit commission to referrer
+        if (user.referredBy) {
+          const referrer = await this.findUserByOwnReferralCode(user.referredBy);
+          if (referrer) {
+            // Calculate 10% commission on the deposit
+            const commission = (parseFloat(amountToCredit) * 0.10).toFixed(2);
+
+            // Update referrer's total earnings and USDT balance
+            const newReferrerUsdtBalance = (parseFloat(referrer.usdtBalance || "0") + parseFloat(commission)).toFixed(2);
+            const newTotalEarnings = (parseFloat(referrer.totalReferralEarnings || "0") + parseFloat(commission)).toFixed(2);
+
+            await tx
+              .update(users)
+              .set({
+                usdtBalance: newReferrerUsdtBalance,
+                totalReferralEarnings: newTotalEarnings
+              })
+              .where(eq(users.id, referrer.id));
+
+            // Create referral reward record (mark as claimed since we credited immediately)
+            const [reward] = await tx.insert(referralRewards)
+              .values({
+                referrerId: referrer.id,
+                referredUserId: user.id,
+                usdtReward: commission,
+                hashReward: "0",
+                purchaseAmount: amountToCredit,
+                purchaseHashrate: "0"
+              })
+              .returning();
+
+            // Mark as claimed immediately
+            await tx.update(referralRewards)
+              .set({ isClaimed: true, claimedAt: new Date() })
+              .where(eq(referralRewards.id, reward.id));
+          }
         }
       }
-    }
+    });
   }
 
   async rejectDeposit(depositId: string, adminNote?: string): Promise<void> {

@@ -477,7 +477,6 @@ export const insertDepositSchema = createInsertSchema(deposits).omit({
   userId: true,
   status: true,
   adminNote: true,
-  currency: true,
   createdAt: true,
   updatedAt: true,
 });
