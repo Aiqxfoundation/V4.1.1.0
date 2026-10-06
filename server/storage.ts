@@ -940,9 +940,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTotalHashPower(): Promise<string> {
+    // Use the same filter as the Go backend's CalculateTotalHashPower:
+    // only active, non-frozen, non-suspended miners with hash_power > 0
     const [result] = await db
       .select({ total: sql<string>`COALESCE(SUM(${users.hashPower}), 0)` })
-      .from(users);
+      .from(users)
+      .where(sql`${users.miningActive} = true AND ${users.hashPower} > 0 AND COALESCE(${users.isFrozen}, false) = false AND COALESCE(${users.miningSuspended}, false) = false`);
     return result?.total || "0";
   }
 

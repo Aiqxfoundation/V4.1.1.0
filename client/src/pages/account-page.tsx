@@ -95,7 +95,7 @@ export default function AccountPage() {
     onSuccess: (data) => {
       toast({ 
         title: "Rewards Claimed!", 
-        description: `Claimed ${data.usdtClaimed} USDT and ${formatHashPower(parseFloat(data.hashClaimed) * 1000)} hashrate` 
+        description: `Claimed ${data.usdtClaimed} USDT and ${formatHashPower(parseFloat(data.hashClaimed))} hashrate`
       });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/referral/stats"] });
@@ -293,7 +293,7 @@ export default function AccountPage() {
                       <Zap className="w-3 h-3" /> Hash Power
                     </p>
                     <p className="text-lg font-bold text-primary">
-                      {formatHashPower(parseFloat(user?.hashPower || '0') * 1000)}
+                      {formatHashPower(parseFloat(user?.hashPower || '0'))}
                     </p>
                   </div>
                   <div className="bg-background rounded-lg p-3">
@@ -360,7 +360,7 @@ export default function AccountPage() {
                           <Hash className="w-3 h-3" /> Total Hash Earned
                         </p>
                         <p className="text-lg font-bold text-blue-500">
-                          {formatHashPower(parseFloat(referralStats?.totalHashEarned || '0') * 1000)}
+                          {formatHashPower(parseFloat(referralStats?.totalHashEarned || '0'))}
                         </p>
                       </div>
                     </div>
@@ -374,7 +374,7 @@ export default function AccountPage() {
                         <div className="space-y-1 text-xs">
                           <p>USDT: <span className="font-bold text-primary">${referralStats?.pendingUsdtRewards}</span></p>
                           <p>Hashrate: <span className="font-bold text-primary">
-                            {formatHashPower(parseFloat(referralStats?.pendingHashRewards || '0') * 1000)}
+                            {formatHashPower(parseFloat(referralStats?.pendingHashRewards || '0'))}
                           </span></p>
                         </div>
                         <Button 
@@ -501,10 +501,10 @@ export default function AccountPage() {
                           <p>Joined: {new Date(slot.joinedAt).toLocaleDateString()}</p>
                           {slot.isActive && (
                             <>
-                              <p>Hash Power: {formatHashPower(parseFloat(slot.hashPower) * 1000)}</p>
+                              <p>Hash Power: {formatHashPower(parseFloat(slot.hashPower))}</p>
                               {parseFloat(slot.pendingUsdtRewards) > 0 && (
                                 <p className="text-green-500">
-                                  Pending: ${slot.pendingUsdtRewards} USDT + {formatHashPower(parseFloat(slot.pendingHashRewards) * 1000)}
+                                  Pending: ${slot.pendingUsdtRewards} USDT + {formatHashPower(parseFloat(slot.pendingHashRewards))}
                                 </p>
                               )}
                             </>

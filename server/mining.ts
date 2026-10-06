@@ -103,6 +103,12 @@ async function initializeSettings() {
       if (totalBlockHeightSetting) {
         totalBlockHeight = parseInt(totalBlockHeightSetting.value);
       } else {
+        // Setting doesn't exist — read the actual max block number from the DB
+        // so we don't start from 0 and hit unique-constraint violations on existing blocks
+        const latestBlock = await storage.getLatestBlock();
+        if (latestBlock && latestBlock.blockNumber) {
+          totalBlockHeight = latestBlock.blockNumber;
+        }
         await storage.setSystemSetting("totalBlockHeight", totalBlockHeight.toString());
       }
       

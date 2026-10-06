@@ -191,8 +191,10 @@ func main() {
                 }
         })
 
-        // Start hourly block generation
-        miningCalculator.StartHourlyBlockGeneration()
+        // Block generation is handled by the Node.js backend (server/mining.ts) which creates
+        // per-user unclaimed_blocks entries. The Go backend only handles WebSocket, mining
+        // status, and claims — NOT block generation.
+        // miningCalculator.StartHourlyBlockGeneration()
 
         // Create router
         r := chi.NewRouter()
@@ -732,9 +734,9 @@ func handleGlobalStats(w http.ResponseWriter, r *http.Request) {
         var totalHashrate, totalCirculation string
         var blockHeight, activeMiners int64
 
-        // Get total hashrate
+        // Get total hashrate — same filter as CalculateTotalHashPower (exclude frozen/suspended)
         database.GetDB().QueryRow(r.Context(),
-                "SELECT COALESCE(SUM(hash_power), 0)::text FROM users WHERE mining_active = true").Scan(&totalHashrate)
+                "SELECT COALESCE(SUM(hash_power), 0)::text FROM users WHERE mining_active = true AND hash_power > 0 AND COALESCE(is_frozen, false) = false AND COALESCE(mining_suspended, false) = false").Scan(&totalHashrate)
 
         // Get current block height
         database.GetDB().QueryRow(r.Context(),

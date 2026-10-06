@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
-import { forceGenerateBlock } from "./mining";
+import { forceGenerateBlock, setupMining } from "./mining";
 import type { Request, Response, NextFunction, Express } from "express";
 import { insertDepositSchema, insertWithdrawalSchema, insertDeviceFingerprintSchema, users } from "@shared/schema";
 import { createServer } from "http";
@@ -36,8 +36,10 @@ export async function registerRoutes(app: Express) {
   // Setup authentication first
   setupAuth(app);
   
-  // DISABLED: Node.js mining engine - using Go backend as single source of truth
-  // setupMining();
+  // Node.js mining engine - generates blocks with per-user unclaimed_blocks entries
+  // (Go backend's block generation is disabled to prevent conflicts; Go only handles
+  // WebSocket, mining status, and claims)
+  setupMining();
   
   // Create HTTP server
   const server = createServer(app);

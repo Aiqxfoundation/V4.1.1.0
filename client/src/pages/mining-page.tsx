@@ -6,38 +6,44 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
 
+interface GlobalStats {
+  totalHashrate: number;
+  blockHeight: number;
+  totalBlockHeight: number;
+  activeMiners: number;
+  blockReward: number;
+  totalCirculation: number;
+  maxSupply: number;
+  nextHalving: number;
+  blocksUntilHalving: number;
+}
+
 export default function MiningPage() {
   const { user, logoutMutation } = useAuth();
-  const [blockTimer, setBlockTimer] = useState(3600); // 1 hour in seconds
-  const [minedBlocks, setMinedBlocks] = useState(1247);
-  const [globalHashRate, setGlobalHashRate] = useState(2847.32);
-  const [networkDifficulty, setNetworkDifficulty] = useState(1.247);
-  const [currentReward, setCurrentReward] = useState(12.5);
 
-  // Real-time block timer
+  // Fetch real global stats from the API
+  const { data: globalStats } = useQuery<GlobalStats>({
+    queryKey: ['/api/global-stats'],
+    refetchInterval: 30000,
+  });
+
+  // Calculate real-time block timer (blocks generate every hour on the hour UTC)
+  const [blockTimer, setBlockTimer] = useState(3600);
+
   useEffect(() => {
+    const calculateTimeUntilNextBlock = () => {
+      const now = new Date();
+      const nextHour = new Date(now);
+      nextHour.setUTCHours(now.getUTCHours() + 1, 0, 0, 0);
+      return Math.floor((nextHour.getTime() - now.getTime()) / 1000);
+    };
+
     const timer = setInterval(() => {
-      setBlockTimer(prev => {
-        if (prev <= 1) {
-          // New block mined
-          setMinedBlocks(blocks => blocks + 1);
-          return 3600; // Reset to 1 hour
-        }
-        return prev - 1;
-      });
+      setBlockTimer(calculateTimeUntilNextBlock());
     }, 1000);
+    setBlockTimer(calculateTimeUntilNextBlock());
 
     return () => clearInterval(timer);
-  }, []);
-
-  // Simulate real-time mining data updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setGlobalHashRate(prev => prev + (Math.random() - 0.5) * 10);
-      setNetworkDifficulty(prev => Math.max(1, prev + (Math.random() - 0.5) * 0.01));
-    }, 15000); // Optimized update interval
-
-    return () => clearInterval(interval);
   }, []);
 
   const formatTime = (seconds: number) => {
@@ -47,6 +53,20 @@ export default function MiningPage() {
   };
 
   const blockProgress = ((3600 - blockTimer) / 3600) * 100;
+
+  // Use real data from API, fall back to 0
+  const globalHashRate = globalStats?.totalHashrate ?? 0;
+  const minedBlocks = globalStats?.totalBlockHeight ?? globalStats?.blockHeight ?? 0;
+  const currentReward = globalStats?.blockReward ?? 0;
+  const activeMiners = globalStats?.activeMiners ?? 0;
+
+  // Format hashrate for display (hashPower is in MH/s)
+  const formatHashrate = (hashrate: number) => {
+    if (hashrate >= 1000000) return `${(hashrate / 1000000).toFixed(3)} TH/s`;
+    if (hashrate >= 1000) return `${(hashrate / 1000).toFixed(3)} GH/s`;
+    if (hashrate >= 1) return `${hashrate.toFixed(2)} MH/s`;
+    return `${(hashrate * 1000).toFixed(2)} KH/s`;
+  };
 
   return (
     <div className="min-h-screen matrix-bg">
@@ -127,7 +147,7 @@ export default function MiningPage() {
                 <div>
                   <p className="text-sm text-muted-foreground font-mono">GLOBAL_HASHRATE</p>
                   <p className="text-2xl font-display font-black text-primary" data-testid="text-global-hashrate">
-                    {globalHashRate.toFixed(2)} TH/s
+                    {formatHashrate(globalHashRate)}
                   </p>
                 </div>
                 <div className="w-12 h-12 cyber-border rounded-lg flex items-center justify-center glow-green">
@@ -159,7 +179,7 @@ export default function MiningPage() {
                 <div>
                   <p className="text-sm text-muted-foreground font-mono">CURRENT_REWARD</p>
                   <p className="text-2xl font-display font-black text-accent" data-testid="text-current-reward">
-                    {currentReward} B2B
+                    {currentReward.toFixed(8)} B2B
                   </p>
                 </div>
                 <div className="w-12 h-12 cyber-border rounded-lg flex items-center justify-center">
@@ -173,13 +193,13 @@ export default function MiningPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground font-mono">DIFFICULTY</p>
-                  <p className="text-2xl font-display font-black text-chart-3" data-testid="text-difficulty">
-                    {networkDifficulty.toFixed(3)}
+                  <p className="text-sm text-muted-foreground font-mono">ACTIVE_MINERS</p>
+                  <p className="text-2xl font-display font-black text-chart-3" data-testid="text-active-miners">
+                    {activeMiners.toLocaleString()}
                   </p>
                 </div>
                 <div className="w-12 h-12 cyber-border rounded-lg flex items-center justify-center">
-                  <i className="fas fa-shield-alt text-chart-3 mining-pulse"></i>
+                  <i className="fas fa-users text-chart-3 mining-pulse"></i>
                 </div>
               </div>
             </CardContent>
@@ -267,34 +287,67 @@ export default function MiningPage() {
               <CardHeader>
                 <CardTitle className="flex items-center font-display text-xl">
                   <i className="fas fa-history text-primary mr-3"></i>
-                  RECENT BLOCKS
+                  NETWORK STATUS
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => {
-                    const blockNum = minedBlocks - i;
-                    const timeAgo = (i + 1) * 10;
-                    return (
-                      <div key={i} className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-primary/20">
-                        <div className="flex items-center space-x-4">
-                          <div className="w-10 h-10 cyber-border rounded-lg flex items-center justify-center">
-                            <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center">
-                              <span className="text-white font-bold text-xs">₿</span>
-                            </div>
-                          </div>
-                          <div>
-                            <p className="font-display font-bold text-foreground">Block #{blockNum}</p>
-                            <p className="text-sm text-muted-foreground font-mono">{timeAgo} minutes ago</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-display font-bold text-primary">+{currentReward} B2B</p>
-                          <p className="text-sm text-muted-foreground font-mono">{(globalHashRate - i * 10).toFixed(2)} TH/s</p>
-                        </div>
+                  <div className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-primary/20">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-10 h-10 cyber-border rounded-lg flex items-center justify-center">
+                        <i className="fas fa-network-wired text-primary"></i>
                       </div>
-                    );
-                  })}
+                      <div>
+                        <p className="font-display font-bold text-foreground">Total Network Hashrate</p>
+                        <p className="text-sm text-muted-foreground font-mono">{activeMiners} active miners</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display font-bold text-primary">{formatHashrate(globalHashRate)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-primary/20">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-10 h-10 cyber-border rounded-lg flex items-center justify-center">
+                        <i className="fas fa-cube text-chart-4"></i>
+                      </div>
+                      <div>
+                        <p className="font-display font-bold text-foreground">Block Height</p>
+                        <p className="text-sm text-muted-foreground font-mono">Total blocks mined</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display font-bold text-chart-4">#{minedBlocks.toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-primary/20">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-10 h-10 cyber-border rounded-lg flex items-center justify-center">
+                        <i className="fas fa-coins text-accent"></i>
+                      </div>
+                      <div>
+                        <p className="font-display font-bold text-foreground">Block Reward</p>
+                        <p className="text-sm text-muted-foreground font-mono">Current reward per block</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display font-bold text-accent">{currentReward.toFixed(8)} B2B</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-primary/20">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-10 h-10 cyber-border rounded-lg flex items-center justify-center">
+                        <i className="fas fa-chart-line text-chart-3"></i>
+                      </div>
+                      <div>
+                        <p className="font-display font-bold text-foreground">Circulating Supply</p>
+                        <p className="text-sm text-muted-foreground font-mono">of 21,000,000 max</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display font-bold text-chart-3">{(globalStats?.totalCirculation ?? 0).toLocaleString()} B2B</p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
