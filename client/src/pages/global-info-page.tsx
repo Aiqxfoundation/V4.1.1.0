@@ -3,38 +3,38 @@ import { Card } from "@/components/ui/card";
 import bitcoinLogo from "@assets/file_00000000221c61fab63936953b889556_1756633909848.png";
 
 export default function GlobalInfoPage() {
-  // Mock data - replace with real API
-  const totalMinted = 50; // Initial B2B in circulation
-  const totalSupply = 21000000; // 21M B2B total supply
+  const { data: globalStats } = useQuery<any>({
+    queryKey: ["/api/global-stats"],
+    refetchInterval: 5000,
+    staleTime: 3000
+  });
+
+  const totalMinted = globalStats?.totalCirculation ?? globalStats?.circulatingSupply ?? 50;
+  const totalSupply = globalStats?.maxSupply ?? 21000000;
   const percentMined = (totalMinted / totalSupply) * 100;
   const targetPercent = 25; // 25% target for exchange listing
   
-  // Dynamic hashrate with network growth
-  const baseHashrate = 584732.50;
-  const networkGrowthRate = 1.0012;
-  const currentHour = new Date().getHours();
-  const globalHashrate = baseHashrate * Math.pow(networkGrowthRate, currentHour);
-  
-  // Fixed block reward
-  const currentBlockReward = 50; // 50 B2B per block
-  const currentBlockHeight = 1 + Math.floor((Date.now() - new Date().setHours(0,0,0,0)) / 600000); // Increment every 10 minutes
+  const globalHashrate = globalStats?.totalHashrate ?? 7529.50;
+  const currentBlockReward = globalStats?.blockReward ?? globalStats?.currentBlockReward ?? 3200;
+  const currentBlockHeight = globalStats?.blockHeight ?? 1;
   
   const getHashrateDisplay = (hashrate: number) => {
+    if (globalStats?.hashRateDisplay) return globalStats.hashRateDisplay;
     if (hashrate >= 1000000) return `${(hashrate / 1000000).toFixed(3)} PH/s`;
     if (hashrate >= 1000) return `${(hashrate / 1000).toFixed(2)} TH/s`;
     return `${hashrate.toFixed(2)} GH/s`;
   };
 
   const stats = {
-    totalDeposits: 584732.50,
+    totalDeposits: parseFloat(globalStats?.totalDeposits || "584732.50"),
     totalWithdrawals: 127341.20,
-    activeMiners: 1847,
-    registeredUsers: 5432,
+    activeMiners: globalStats?.activeMiners ?? 1,
+    registeredUsers: globalStats?.userCount ?? 5432,
     networkHashrate: globalHashrate,
     blockHeight: currentBlockHeight,
-    blocksToday: Math.floor((Date.now() - new Date().setHours(0,0,0,0)) / 600000), // 1 block per 10 minutes
+    blocksToday: globalStats?.blocksToday ?? 1,
     blockReward: currentBlockReward,
-    difficulty: 47.8 + (globalHashrate / 100000) // Dynamic difficulty
+    difficulty: globalStats?.networkDifficulty ? parseFloat(globalStats.networkDifficulty) : 47.8
   };
 
   return (

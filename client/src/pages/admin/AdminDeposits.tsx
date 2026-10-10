@@ -408,15 +408,16 @@ export default function AdminDeposits() {
                             >
                               <Copy className="h-3 w-3" />
                             </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6 hover:bg-zinc-700"
-                              onClick={() => window.open(getBlockchainExplorerUrl(deposit.txHash!, deposit.network), '_blank')}
+                            <a
+                              href={getBlockchainExplorerUrl(deposit.txHash!, deposit.network)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-zinc-700 text-gray-400 hover:text-white"
                               data-testid={`button-explorer-${deposit.id}`}
+                              title="View in Blockchain Explorer"
                             >
                               <ExternalLink className="h-3 w-3" />
-                            </Button>
+                            </a>
                           </div>
                         ) : (
                           <span className="text-gray-600">-</span>

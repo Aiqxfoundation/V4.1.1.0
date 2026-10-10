@@ -45,28 +45,11 @@ export function useMiningWebSocket(userId?: string) {
       ws.current.close();
     }
 
-    // Determine WebSocket URL based on environment
+    // Determine WebSocket URL based on environment (single origin on port 3000)
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const host = window.location.hostname;
-    const port = window.location.port || (protocol === 'wss' ? '443' : '80');
-    
-    // In development, connect to localhost:8080
-    // In production (Replit), use the same host but port 8080
-    let wsUrl: string;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      wsUrl = 'ws://localhost:8080/api/ws';
-    } else {
-      // For Replit environment - use the public URL
-      wsUrl = `${protocol}://${host}:${port}/api/ws`;
-      // Try direct connection to Go backend on port 8080
-      if (import.meta.env.VITE_API_URL) {
-        const apiUrl = import.meta.env.VITE_API_URL.replace('http://', 'ws://').replace('https://', 'wss://');
-        wsUrl = `${apiUrl}/api/ws`;
-      } else {
-        // Fallback to proxied WebSocket through Express
-        wsUrl = `${protocol}://${host}:${port}/api/ws`;
-      }
-    }
+    const port = window.location.port ? `:${window.location.port}` : '';
+    const wsUrl = `${protocol}://${host}${port}/api/ws`;
 
     // WebSocket connection established
     
@@ -100,6 +83,7 @@ export function useMiningWebSocket(userId?: string) {
               queryClient.invalidateQueries({ queryKey: ['/api/mining/status'] });
               queryClient.invalidateQueries({ queryKey: ['/api/mining/unclaimed-blocks'] });
               queryClient.invalidateQueries({ queryKey: ['/api/supply-metrics'] });
+              queryClient.invalidateQueries({ queryKey: ['/api/global-stats'] });
               break;
               
             case 'user_mining_update':

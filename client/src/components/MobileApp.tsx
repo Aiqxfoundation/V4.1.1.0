@@ -20,8 +20,10 @@ import AdminTransactions from "@/pages/admin/AdminTransactions";
 import AdminDeposits from "@/pages/admin/AdminDeposits";
 import AdminWithdrawals from "@/pages/admin/AdminWithdrawals";
 import AdminAddresses from "@/pages/admin/AdminAddresses";
+import AdminAuditLogs from "@/pages/admin/AdminAuditLogs";
 import UserProfile from "@/pages/admin/UserProfile";
 import TransactionsPage from "@/pages/transactions-page";
+import ReferralPage from "@/pages/referral-page";
 import Whitepaper from "@/pages/whitepaper";
 import GlobalPage from "@/pages/global-page";
 import BtcMiningPage from "@/pages/btc-mining";
@@ -29,6 +31,26 @@ import { ProtectedRoute } from "@/lib/protected-route";
 import { AdminProtectedRoute } from "@/lib/admin-protected-route";
 import LoadingScreen from "./LoadingScreen";
 import { SuspensionModal } from "./SuspensionModal";
+
+function RefRedirectHandler() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    try {
+      const pathParts = window.location.pathname.split('/');
+      const codeIndex = pathParts.indexOf('ref');
+      const code = codeIndex >= 0 && pathParts[codeIndex + 1] ? pathParts[codeIndex + 1] : '';
+      if (code) {
+        sessionStorage.setItem('referral_prefill', code);
+        setLocation(`/auth?ref=${encodeURIComponent(code)}`);
+      } else {
+        setLocation('/auth');
+      }
+    } catch {
+      setLocation('/auth');
+    }
+  }, [setLocation]);
+  return null;
+}
 
 export default function MobileApp() {
   const { user } = useAuth();
@@ -126,8 +148,12 @@ export default function MobileApp() {
           <ProtectedRoute path="/transfer" component={TransferPage} />
           <ProtectedRoute path="/transactions" component={TransactionsPage} />
           <ProtectedRoute path="/btc-mining" component={BtcMiningPage} />
+          <ProtectedRoute path="/referral" component={ReferralPage} />
+          <ProtectedRoute path="/referrals" component={ReferralPage} />
           <Route path="/whitepaper" component={Whitepaper} />
           <Route path="/global" component={GlobalPage} />
+          <Route path="/global-info" component={GlobalPage} />
+          <Route path="/ref/:code" component={RefRedirectHandler} />
           <AdminProtectedRoute path="/admin" component={AdminUsers} />
           <AdminProtectedRoute path="/admin/users" component={AdminUsers} />
           <AdminProtectedRoute path="/admin/users/active" component={ActiveUsers} />
@@ -139,6 +165,7 @@ export default function MobileApp() {
           <AdminProtectedRoute path="/admin/deposits" component={AdminDeposits} />
           <AdminProtectedRoute path="/admin/withdrawals" component={AdminWithdrawals} />
           <AdminProtectedRoute path="/admin/addresses" component={AdminAddresses} />
+          <AdminProtectedRoute path="/admin/audit-logs" component={AdminAuditLogs} />
         </Switch>
       </div>
 

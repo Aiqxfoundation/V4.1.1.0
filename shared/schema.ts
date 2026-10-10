@@ -41,6 +41,11 @@ export const users = pgTable("users", {
   accruedPending: decimal("accrued_pending", { precision: 38, scale: 18 }).default("0"),
   suspensionAtBlock: integer("suspension_at_block"),
   securityPin: text("security_pin"),
+  twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  twoFactorSecret: text("two_factor_secret"),
+  dailyWithdrawalLimit: decimal("daily_withdrawal_limit", { precision: 10, scale: 2 }).default("1000.00"),
+  dailyEarningCap: decimal("daily_earning_cap", { precision: 18, scale: 8 }).default("500.00000000"),
+  lastWithdrawalAt: timestamp("last_withdrawal_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -131,6 +136,8 @@ export const miningBlocks = pgTable("mining_blocks", {
   globalHashrate: decimal("global_hashrate", { precision: 10, scale: 2 }).default("0.00"),
   // Cumulative reward per hash at this block for O(1) calculation
   cumulativeIndex: decimal("cumulative_index", { precision: 38, scale: 18 }).default("0"),
+  blockHash: text("block_hash"),
+  previousHash: text("previous_hash"),
   blockStartTime: timestamp("block_start_time"),
   blockEndTime: timestamp("block_end_time"),
   timestamp: timestamp("timestamp").defaultNow(),
@@ -241,6 +248,19 @@ export const userAddressAssignments = pgTable("user_address_assignments", {
   address: varchar("address", { length: 100 }).notNull(),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at").notNull(), // 24 hours from assignedAt
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Admin Audit Logs Table
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: uuid("admin_id").references(() => users.id).notNull(),
+  adminUsername: text("admin_username").notNull(),
+  action: text("action").notNull(),
+  targetType: text("target_type").notNull(),
+  targetId: text("target_id"),
+  details: text("details"),
+  ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -468,6 +488,11 @@ export const insertUserSchema = createInsertSchema(users).omit({
   isBanned: true,
   hasStartedMining: true,
   hasPaidPurchase: true,
+  twoFactorEnabled: true,
+  twoFactorSecret: true,
+  dailyWithdrawalLimit: true,
+  dailyEarningCap: true,
+  lastWithdrawalAt: true,
 }).extend({
   accessKey: z.string().regex(/^B2B-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/, "Access key must be in format B2B-XXXXX-XXXXX-XXXXX-XXXXX"),
 });
@@ -622,3 +647,10 @@ export type DepositAddress = typeof depositAddresses.$inferSelect;
 export type InsertDepositAddress = z.infer<typeof insertDepositAddressSchema>;
 export type UserAddressAssignment = typeof userAddressAssignments.$inferSelect;
 export type InsertUserAddressAssignment = z.infer<typeof insertUserAddressAssignmentSchema>;
+
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;

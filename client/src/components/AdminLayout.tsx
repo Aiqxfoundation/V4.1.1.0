@@ -12,8 +12,16 @@ import {
   Shield,
   LogOut,
   ChevronRight,
-  Key
+  Key,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  ClipboardList,
+  Pickaxe
 } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import AdminSecretKeyModal from "@/components/AdminSecretKeyModal";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -34,6 +42,16 @@ const navItems: NavItem[] = [
     icon: Users,
   },
   {
+    title: "Deposits",
+    href: "/admin/deposits",
+    icon: ArrowDownCircle,
+  },
+  {
+    title: "Withdrawals",
+    href: "/admin/withdrawals",
+    icon: ArrowUpCircle,
+  },
+  {
     title: "Transactions", 
     href: "/admin/transactions",
     icon: DollarSign,
@@ -43,12 +61,64 @@ const navItems: NavItem[] = [
     href: "/admin/addresses",
     icon: Key,
   },
+  {
+    title: "Audit Logs",
+    href: "/admin/audit-logs",
+    icon: ClipboardList,
+  },
 ];
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const [location, setLocation] = useLocation();
   const { user, logoutMutation } = useAuth();
+  const { toast } = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showSecretKeyModal, setShowSecretKeyModal] = useState(false);
+  const [tapCount, setTapCount] = useState(0);
+  const [lastTapTime, setLastTapTime] = useState(0);
+
+  const handleSecretTap = () => {
+    const now = Date.now();
+    if (now - lastTapTime < 800) {
+      const nextCount = tapCount + 1;
+      setTapCount(nextCount);
+      if (nextCount >= 3) {
+        setTapCount(0);
+        setShowSecretKeyModal(true);
+        toast({
+          title: "🔐 Master Security Unlocked",
+          description: "Admin Private Key rotation panel opened.",
+          className: "bg-zinc-950 border-[#f7931a] text-white"
+        });
+      }
+    } else {
+      setTapCount(1);
+    }
+    setLastTapTime(now);
+  };
+
+  const mineBlockMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/mining/mine-block");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Block Mined!",
+        description: data.message || `Block #${data.block?.blockNumber} generated successfully.`,
+        className: "bg-orange-600 text-white"
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/global-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/audit-logs"] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Mining Failed",
+        description: err.message || "Could not mine block",
+        variant: "destructive"
+      });
+    }
+  });
 
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -83,10 +153,21 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div className="flex h-full flex-col">
           {/* Sidebar Header */}
           <div className="flex h-16 items-center justify-between px-6 border-b border-zinc-800">
-            <div className="flex items-center gap-2">
-              <Shield className="h-6 w-6 text-[#f7931a]" />
+            <div 
+              className="flex items-center gap-2 cursor-pointer select-none group"
+              onClick={handleSecretTap}
+              title="Triple tap for Admin Key Security"
+            >
+              <Shield className="h-6 w-6 text-[#f7931a] group-hover:scale-110 transition-transform" />
               <div>
-                <h2 className="text-lg font-bold text-white">B2B Admin</h2>
+                <h2 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors flex items-center gap-1.5">
+                  B2B Admin
+                  {tapCount > 0 && (
+                    <span className="text-[10px] text-[#f7931a] font-mono opacity-70">
+                      ({tapCount}/3)
+                    </span>
+                  )}
+                </h2>
                 <p className="text-xs text-gray-400">Dashboard</p>
               </div>
             </div>
@@ -250,18 +331,41 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </Button>
 
           <div className="flex-1 flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-white">
+            <div 
+              onClick={handleSecretTap}
+              className="cursor-pointer select-none group py-1"
+              title="Triple tap to rotate Admin Private Key"
+            >
+              <h1 className="text-xl font-bold text-white group-hover:text-orange-400 transition-colors flex items-center gap-2">
                 {navItems.find(item => isActiveRoute(item.href))?.title || "Admin Dashboard"}
+                {tapCount > 0 && (
+                  <span className="text-xs text-[#f7931a] font-mono opacity-80 px-1.5 py-0.5 rounded bg-[#f7931a]/10 border border-[#f7931a]/30">
+                    {tapCount}/3 taps
+                  </span>
+                )}
               </h1>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-400 group-hover:text-gray-300">
                 Manage your B2B platform
               </p>
             </div>
 
             {/* Optional: Add any top bar actions here */}
-            <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2 text-sm text-gray-400">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs font-semibold flex items-center gap-1.5"
+                onClick={() => mineBlockMutation.mutate()}
+                disabled={mineBlockMutation.isPending}
+              >
+                <Pickaxe className={`h-3.5 w-3.5 ${mineBlockMutation.isPending ? 'animate-spin' : ''}`} />
+                {mineBlockMutation.isPending ? 'Mining...' : 'Mine Block'}
+              </Button>
+              <div 
+                className="hidden md:flex items-center gap-2 text-sm text-gray-400 cursor-pointer hover:text-white transition-colors"
+                onClick={handleSecretTap}
+                title="Triple tap for Admin Private Key management"
+              >
                 <Shield className="h-4 w-4 text-[#f7931a]" />
                 <span>Admin Mode</span>
               </div>
@@ -276,6 +380,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </div>
         </main>
       </div>
+
+      {/* Secret Admin Key Rotation Modal */}
+      <AdminSecretKeyModal
+        isOpen={showSecretKeyModal}
+        onClose={() => setShowSecretKeyModal(false)}
+      />
     </div>
   );
 }

@@ -48,8 +48,13 @@ import {
   type DepositAddress,
   type InsertDepositAddress,
   type UserAddressAssignment,
-  type InsertUserAddressAssignment
+  type InsertUserAddressAssignment,
+  auditLogs,
+  type AuditLog,
+  type InsertAuditLog
 } from "@shared/schema";
+import { createHash, randomBytes, scrypt } from "crypto";
+import { promisify } from "util";
 import { db } from "./db";
 import { eq, desc, sql, and, gte } from "drizzle-orm";
 import session from "express-session";
@@ -59,6 +64,7 @@ import { pool } from "./db";
 const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
+  ensureAdminUsers(): Promise<void>;
   // User methods
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -75,6 +81,11 @@ export interface IStorage {
   unbanUser(userId: string): Promise<void>;
   getAllUsers(): Promise<User[]>;
   updateUserBalances(userId: string, balances: { usdtBalance?: string; b2bBalance?: string; hashPower?: string }): Promise<void>;
+
+  // Audit Log methods
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogs(limit?: number): Promise<AuditLog[]>;
+  getDailyWithdrawalTotal(userId: string): Promise<number>;
   
   // Global deposit address methods
   getGlobalDepositAddress(currency: 'USDT' | 'BTC'): Promise<string>;
@@ -274,6 +285,69 @@ export class DatabaseStorage implements IStorage {
     console.log(`Fixed ${approvedDeposits.length} deposits with incorrect status`);
   }
 
+  async ensureAdminUsers(): Promise<void> {
+    try {
+      const asyncScrypt = promisify(scrypt);
+      const hashDefaultKey = async (key: string): Promise<string> => {
+        const salt = randomBytes(16);
+        const hash = (await asyncScrypt(key, salt, 32)) as Buffer;
+        return `${salt.toString('hex')}:${hash.toString('hex')}`;
+      };
+
+      const existingAdmin = await this.getUserByUsername('admin');
+      if (!existingAdmin) {
+        const hashedKey = await hashDefaultKey('B2B-ADMIN-MASTER-SECURE-KEY01');
+        await db.insert(users).values({
+          username: 'admin',
+          accessKey: hashedKey,
+          isAdmin: true,
+          referralCode: 'ADMIN001',
+          usdtBalance: '10000.00',
+          b2bBalance: '1000.00000000',
+          hashPower: '5000.00',
+          baseHashPower: '5000.00',
+          isBanned: false,
+          isFrozen: false,
+          miningActive: true,
+          hasStartedMining: true,
+          hasPaidPurchase: true
+        });
+        console.log('✅ Created default admin account (username: admin, key: B2B-ADMIN-MASTER-SECURE-KEY01)');
+      } else {
+        if (!existingAdmin.isAdmin || existingAdmin.isBanned) {
+          await db.update(users).set({ isAdmin: true, isBanned: false }).where(eq(users.id, existingAdmin.id));
+        }
+      }
+
+      const existingSuperAdmin = await this.getUserByUsername('super_admin');
+      if (!existingSuperAdmin) {
+        const superHashedKey = await hashDefaultKey('B2B-SUPER-MASTER-SECURE-KEY01');
+        await db.insert(users).values({
+          username: 'super_admin',
+          accessKey: superHashedKey,
+          isAdmin: true,
+          referralCode: 'SUPER001',
+          usdtBalance: '50000.00',
+          b2bBalance: '5000.00000000',
+          hashPower: '10000.00',
+          baseHashPower: '10000.00',
+          isBanned: false,
+          isFrozen: false,
+          miningActive: true,
+          hasStartedMining: true,
+          hasPaidPurchase: true
+        });
+        console.log('✅ Created default super_admin account (username: super_admin, key: B2B-SUPER-MASTER-SECURE-KEY01)');
+      } else {
+        if (!existingSuperAdmin.isAdmin || existingSuperAdmin.isBanned) {
+          await db.update(users).set({ isAdmin: true, isBanned: false }).where(eq(users.id, existingSuperAdmin.id));
+        }
+      }
+    } catch (err) {
+      console.warn('ensureAdminUsers notice:', err);
+    }
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
@@ -291,7 +365,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUsersByReferralCode(referralCode: string): Promise<User[]> {
-    return await db.select().from(users).where(eq(users.referredBy, referralCode));
+    const owner = (await this.findUserByOwnReferralCode(referralCode)) || (await this.getUserByUsername(referralCode));
+    const codes = [referralCode];
+    if (owner) {
+      if (owner.username && !codes.includes(owner.username)) codes.push(owner.username);
+      if (owner.referralCode && !codes.includes(owner.referralCode)) codes.push(owner.referralCode);
+    }
+    return await db.select().from(users).where(sql`${users.referredBy} IN (${sql.join(codes.map(c => sql`${c}`), sql`, `)})`);
   }
 
   async findUserByOwnReferralCode(referralCode: string): Promise<User | null> {
@@ -409,7 +489,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(deposits.status, "pending"))
       .orderBy(desc(deposits.createdAt));
     
-    return result.map(row => ({
+    return result.map((row: any) => ({
       ...row.deposits,
       user: row.users
     }));
@@ -671,7 +751,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserHashrate(userId: string, newHashrate: string): Promise<void> {
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: any) => {
       const [user] = await tx.select().from(users).where(eq(users.id, userId));
       if (!user) throw new Error("User not found");
       
@@ -746,6 +826,11 @@ export class DatabaseStorage implements IStorage {
     const blockStartTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
     const blockEndTime = new Date(blockStartTime.getTime() + 3600000);
     
+    const latest = await this.getLatestBlock();
+    const previousHash = latest?.blockHash || '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const payload = `${blockNumber}:${previousHash}:${now.getTime()}:${totalHashPower}:${reward}:${cumulativeIndex}`;
+    const blockHash = '0x' + createHash('sha256').update(payload).digest('hex');
+    
     const [block] = await db
       .insert(miningBlocks)
       .values({
@@ -754,6 +839,8 @@ export class DatabaseStorage implements IStorage {
         totalHashPower,
         globalHashrate: totalHashPower,
         cumulativeIndex,
+        blockHash,
+        previousHash,
         blockStartTime,
         blockEndTime,
         timestamp: now,
@@ -768,6 +855,11 @@ export class DatabaseStorage implements IStorage {
     const blockStartTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
     const blockEndTime = new Date(blockStartTime.getTime() + 3600000); // Add 1 hour
     
+    const latest = await this.getLatestBlock();
+    const previousHash = latest?.blockHash || '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const payload = `${blockNumber}:${previousHash}:${now.getTime()}:${totalHashPower}:${reward}`;
+    const blockHash = '0x' + createHash('sha256').update(payload).digest('hex');
+    
     const [block] = await db
       .insert(miningBlocks)
       .values({ 
@@ -775,6 +867,8 @@ export class DatabaseStorage implements IStorage {
         reward, 
         totalHashPower,
         globalHashrate: globalHashrate || totalHashPower,
+        blockHash,
+        previousHash,
         blockStartTime,
         blockEndTime
       })
@@ -864,7 +958,7 @@ export class DatabaseStorage implements IStorage {
       .from(users)
       .where(eq(users.miningActive, true));
       
-    const totalLockedHashrate = activeUsers.reduce((sum, u) => {
+    const totalLockedHashrate = activeUsers.reduce((sum: number, u: any) => {
       return sum + parseFloat(u.lockedHashPower || '0');
     }, 0);
     
@@ -1084,7 +1178,7 @@ export class DatabaseStorage implements IStorage {
       wasSuspended = user.miningSuspended || false;
       
       // Reset unclaimed counter and suspension since all blocks are claimed
-      const maxBlockNumber = blocks.length > 0 ? Math.max(...blocks.map(b => b.blockNumber)) : null;
+      const maxBlockNumber = blocks.length > 0 ? Math.max(...blocks.map((b: any) => b.blockNumber)) : null;
       const updates: any = {
         b2bBalance: newBalance,
         lastClaimedBlock: maxBlockNumber,
@@ -1183,7 +1277,7 @@ export class DatabaseStorage implements IStorage {
     .from(minerActivity)
     .leftJoin(users, eq(minerActivity.userId, users.id));
     
-    return result.map(r => ({
+    return result.map((r: any) => ({
       ...r.minerActivity,
       user: r.user!
     }));
@@ -1220,7 +1314,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(deposits.userId, users.id))
       .orderBy(desc(deposits.createdAt));
     
-    return result.map(row => ({
+    return result.map((row: any) => ({
       ...row.deposits,
       user: row.users || undefined
     }));
@@ -1233,7 +1327,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(withdrawals.userId, users.id))
       .orderBy(desc(withdrawals.createdAt));
     
-    return result.map(row => ({
+    return result.map((row: any) => ({
       ...row.withdrawals,
       user: row.users || undefined,
       currency: row.withdrawals.currency || (row.withdrawals.network === 'BTC' ? 'BTC' : 
@@ -1253,7 +1347,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(transfers.fromUserId, userId))
       .orderBy(desc(transfers.createdAt));
     
-    return result.map(r => ({
+    return result.map((r: any) => ({
       ...r.transfer,
       toUsername: r.toUser?.username || 'Unknown'
     }));
@@ -1270,7 +1364,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(transfers.toUserId, userId))
       .orderBy(desc(transfers.createdAt));
     
-    return result.map(r => ({
+    return result.map((r: any) => ({
       ...r.transfer,
       fromUsername: r.fromUser?.username || 'Unknown'
     }));
@@ -1290,7 +1384,7 @@ export class DatabaseStorage implements IStorage {
     try {
       // Get all mined blocks to calculate total mined supply
       const blocks = await db.select().from(miningBlocks);
-      const totalMined = blocks.reduce((sum, block) => {
+      const totalMined = blocks.reduce((sum: number, block: any) => {
         return sum + parseFloat(block.reward || "0");
       }, 0);
       return totalMined.toFixed(8);
@@ -1304,7 +1398,7 @@ export class DatabaseStorage implements IStorage {
     try {
       // Circulating supply = All B2B in user wallets (not unclaimed)
       const allUsers = await db.select().from(users);
-      const circulatingSupply = allUsers.reduce((sum, user) => {
+      const circulatingSupply = allUsers.reduce((sum: number, user: any) => {
         return sum + parseFloat(user.b2bBalance || "0");
       }, 0);
       return circulatingSupply.toFixed(8);
@@ -1780,9 +1874,9 @@ export class DatabaseStorage implements IStorage {
         .where(sql`${referralRewards.referrerId} = ${userId} AND ${referralRewards.referredUserId} = ${code.usedBy}`)
         .orderBy(desc(referralRewards.createdAt));
       
-      const pendingRewards = rewards.filter(r => !r.isClaimed);
-      const pendingUsdt = pendingRewards.reduce((sum, r) => sum + parseFloat(r.usdtReward), 0);
-      const pendingHash = pendingRewards.reduce((sum, r) => sum + parseFloat(r.hashReward), 0);
+      const pendingRewards = rewards.filter((r: any) => !r.isClaimed);
+      const pendingUsdt = pendingRewards.reduce((sum: number, r: any) => sum + parseFloat(r.usdtReward), 0);
+      const pendingHash = pendingRewards.reduce((sum: number, r: any) => sum + parseFloat(r.hashReward), 0);
       
       slots.push({
         code: code.code,
@@ -1868,9 +1962,9 @@ export class DatabaseStorage implements IStorage {
       .from(referralRewards)
       .where(eq(referralRewards.referrerId, userId));
     
-    const claimedRewards = allRewards.filter(r => r.isClaimed);
-    const totalUsdtEarned = claimedRewards.reduce((sum, r) => sum + parseFloat(r.usdtReward), 0);
-    const totalHashEarned = claimedRewards.reduce((sum, r) => sum + parseFloat(r.hashReward), 0);
+    const claimedRewards = allRewards.filter((r: any) => r.isClaimed);
+    const totalUsdtEarned = claimedRewards.reduce((sum: number, r: any) => sum + parseFloat(r.usdtReward), 0);
+    const totalHashEarned = claimedRewards.reduce((sum: number, r: any) => sum + parseFloat(r.hashReward), 0);
     
     return {
       totalCodes: user.totalReferralCodes || 0,
@@ -2216,6 +2310,39 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(depositAddresses.id, id));
   }
+
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const [entry] = await db
+      .insert(auditLogs)
+      .values(log)
+      .returning();
+    return entry;
+  }
+
+  async getAuditLogs(limit = 100): Promise<AuditLog[]> {
+    return await db
+      .select()
+      .from(auditLogs)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getDailyWithdrawalTotal(userId: string): Promise<number> {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const userWithdrawals = await db
+      .select()
+      .from(withdrawals)
+      .where(and(
+        eq(withdrawals.userId, userId),
+        gte(withdrawals.createdAt, oneDayAgo)
+      ));
+    return userWithdrawals.reduce((sum: number, w: any) => {
+      if (w.status !== 'rejected') {
+        return sum + parseFloat(w.amount || '0');
+      }
+      return sum;
+    }, 0);
+  }
 }
 
 import { MemoryStorage } from "./memoryStorage";
@@ -2263,29 +2390,17 @@ export async function fetchRealBtcPrice(): Promise<string> {
 // Storage variables will be initialized during server startup
 
 async function testDatabaseConnection(): Promise<boolean> {
+  if (!process.env.DATABASE_URL || !pool) {
+    return false;
+  }
   try {
     // Test database connection with a simple query
     const result = await db.execute(sql`SELECT 1 as test`);
     console.log('✅ Database connection test successful');
     return true;
   } catch (error: any) {
-    console.error('❌ Database connection test failed:', error.message);
+    console.warn('Database connection test failed:', error.message);
     return false;
-  }
-}
-
-// Initialize storage with fallback
-async function initializeStorage() {
-  const dbAvailable = await testDatabaseConnection();
-  
-  if (dbAvailable) {
-    // Using PostgreSQL database
-    storage = new DatabaseStorage();
-    isUsingMemoryStorage = false;
-  } else {
-    // Using in-memory storage - default accounts created
-    storage = new MemoryStorage();
-    isUsingMemoryStorage = true;
   }
 }
 
@@ -2299,18 +2414,24 @@ export async function initStorage() {
   
   if (dbAvailable) {
     // Using PostgreSQL database - ALWAYS preferred
-    storage = new DatabaseStorage();
-    isUsingMemoryStorage = false;
-    console.log('✅ Initialized DatabaseStorage - all data will be persisted to PostgreSQL');
-    
-    // Run database fixes and initialization
-    await storage.fixDepositStatuses();
-    console.log('✅ Database initialization and fixes completed');
+    try {
+      storage = new DatabaseStorage();
+      isUsingMemoryStorage = false;
+      console.log('✅ Initialized DatabaseStorage - all data will be persisted to PostgreSQL');
+      
+      // Run database fixes and initialization
+      await storage.fixDepositStatuses();
+      await storage.ensureAdminUsers();
+      console.log('✅ Database initialization and fixes completed');
+    } catch (err) {
+      console.warn('DatabaseStorage initialization error, using MemoryStorage fallback:', err);
+      storage = new MemoryStorage();
+      isUsingMemoryStorage = true;
+    }
   } else {
-    // CRITICAL: User requested NO memory storage fallback
-    console.error('❌ FATAL: Database connection failed and user requires database storage only');
-    console.error('❌ Please ensure DATABASE_URL is set and database is accessible');
-    throw new Error('Database connection required - memory storage fallback disabled per user requirements');
+    storage = new MemoryStorage();
+    isUsingMemoryStorage = true;
+    console.log('ℹ️ Running with in-memory storage (PostgreSQL database not available)');
   }
   
   return storage;

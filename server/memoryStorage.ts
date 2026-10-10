@@ -21,12 +21,16 @@ import {
   type ReferralCode,
   type InsertReferralCode,
   type ReferralReward,
-  type InsertReferralReward
+  type InsertReferralReward,
+  type AuditLog,
+  type InsertAuditLog,
+  type DepositAddress,
+  type UserAddressAssignment
 } from "@shared/schema";
 import { IStorage } from "./storage";
 import session from "express-session";
 import MemoryStore from "memorystore";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { scrypt, randomBytes, timingSafeEqual, createHash } from "crypto";
 import { promisify } from "util";
 
 const scryptAsync = promisify(scrypt);
@@ -38,6 +42,9 @@ export class MemoryStorage implements IStorage {
   private passwords: Map<string, string> = new Map(); // userId -> password
   private deposits: Map<string, Deposit> = new Map();
   private withdrawals: Map<string, Withdrawal> = new Map();
+  private auditLogsList: AuditLog[] = [];
+  private depositAddressesMap: Map<string, DepositAddress> = new Map();
+  private userAddressAssignmentsMap: Map<string, UserAddressAssignment> = new Map();
   private miningBlocks: Map<string, MiningBlock> = new Map();
   private btcPriceCache: { price: string; timestamp: number } | null = null;
   private readonly PRICE_CACHE_DURATION = 30000; // 30 seconds cache
@@ -71,16 +78,23 @@ export class MemoryStorage implements IStorage {
   }
 
   private async initializeDefaultData() {
+    const hashAccessKeyFormat = async (key: string): Promise<string> => {
+      const salt = randomBytes(16);
+      const hash = (await scryptAsync(key, salt, 32)) as Buffer;
+      return `${salt.toString('hex')}:${hash.toString('hex')}`;
+    };
+
     // Create default admin user
     const adminId = 'admin-' + randomBytes(8).toString('hex');
     const salt = randomBytes(16).toString("hex");
     const buf = (await scryptAsync('123456', salt, 64)) as Buffer;
     const hashedPassword = `${buf.toString("hex")}.${salt}`;
+    const adminHashedKey = await hashAccessKeyFormat('B2B-ADMIN-MASTER-SECURE-KEY01');
     
     const adminUser: User = {
       id: adminId,
       username: 'admin',
-      accessKey: 'admin-key-' + randomBytes(16).toString('hex'),
+      accessKey: adminHashedKey,
       referralCode: 'ADM1N0X7',
       securityPin: null,
       referredBy: null,  // No referrer for admin
@@ -114,6 +128,11 @@ export class MemoryStorage implements IStorage {
       accruedPending: '0',
       suspensionAtBlock: null,
       registrationIp: null,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      dailyWithdrawalLimit: "1000.00",
+      dailyEarningCap: "500.00000000",
+      lastWithdrawalAt: null,
       createdAt: new Date()
     };
     
@@ -126,11 +145,12 @@ export class MemoryStorage implements IStorage {
     const superAdminSalt = randomBytes(16).toString("hex");
     const superAdminBuf = (await scryptAsync('SuperAdmin@2025', superAdminSalt, 64)) as Buffer;
     const superAdminHashedPassword = `${superAdminBuf.toString("hex")}.${superAdminSalt}`;
+    const superAdminHashedKey = await hashAccessKeyFormat('B2B-SUPER-MASTER-SECURE-KEY01');
     
     const superAdminUser: User = {
       id: superAdminId,
       username: 'super_admin',
-      accessKey: 'super-admin-key-' + randomBytes(16).toString('hex'),
+      accessKey: superAdminHashedKey,
       referralCode: 'SUPER0X1',
       securityPin: null,
       referredBy: null,  // No referrer for super admin
@@ -163,6 +183,11 @@ export class MemoryStorage implements IStorage {
       accruedPending: '0',
       suspensionAtBlock: null,
       registrationIp: null,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      dailyWithdrawalLimit: "1000.00",
+      dailyEarningCap: "500.00000000",
+      lastWithdrawalAt: null,
       createdAt: new Date()
     };
     
@@ -227,6 +252,11 @@ export class MemoryStorage implements IStorage {
       accruedPending: '0',
       suspensionAtBlock: null,
       registrationIp: null,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      dailyWithdrawalLimit: "1000.00",
+      dailyEarningCap: "500.00000000",
+      lastWithdrawalAt: null,
       createdAt: new Date()
     };
     
@@ -280,6 +310,11 @@ export class MemoryStorage implements IStorage {
       accruedPending: '0',
       suspensionAtBlock: null,
       registrationIp: null,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      dailyWithdrawalLimit: "1000.00",
+      dailyEarningCap: "500.00000000",
+      lastWithdrawalAt: null,
       createdAt: new Date()
     };
     
@@ -365,6 +400,11 @@ export class MemoryStorage implements IStorage {
         accruedPending: '0',
         suspensionAtBlock: null,
         registrationIp: null,
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+        dailyWithdrawalLimit: "1000.00",
+        dailyEarningCap: "500.00000000",
+        lastWithdrawalAt: null,
         createdAt: minerCreatedAt
       };
       
@@ -431,6 +471,11 @@ export class MemoryStorage implements IStorage {
         accruedPending: '0',
         suspensionAtBlock: null,
         registrationIp: null,
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+        dailyWithdrawalLimit: "1000.00",
+        dailyEarningCap: "500.00000000",
+        lastWithdrawalAt: null,
         createdAt: new Date()
       };
       
@@ -460,6 +505,10 @@ export class MemoryStorage implements IStorage {
     return this.users.get(id);
   }
 
+  async ensureAdminUsers(): Promise<void> {
+    // Admin users are initialized in constructor
+  }
+
   async getUserByUsername(username: string): Promise<User | undefined> {
     const userId = this.usersByUsername.get(username);
     if (!userId) return undefined;
@@ -479,9 +528,15 @@ export class MemoryStorage implements IStorage {
   }
 
   async getUsersByReferralCode(referralCode: string): Promise<User[]> {
+    const owner = (await this.findUserByOwnReferralCode(referralCode)) || (await this.getUserByUsername(referralCode));
+    const codes = [referralCode];
+    if (owner) {
+      if (owner.username && !codes.includes(owner.username)) codes.push(owner.username);
+      if (owner.referralCode && !codes.includes(owner.referralCode)) codes.push(owner.referralCode);
+    }
     const referredUsers: User[] = [];
     for (const user of Array.from(this.users.values())) {
-      if (user.referredBy === referralCode) {
+      if (user.referredBy && codes.includes(user.referredBy)) {
         referredUsers.push(user);
       }
     }
@@ -555,6 +610,11 @@ export class MemoryStorage implements IStorage {
       userIndex: '0',
       accruedPending: '0',
       suspensionAtBlock: null,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      dailyWithdrawalLimit: "1000.00",
+      dailyEarningCap: "500.00000000",
+      lastWithdrawalAt: null,
       createdAt: new Date()
     };
     
@@ -859,16 +919,23 @@ export class MemoryStorage implements IStorage {
     const blockStartTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
     const blockEndTime = new Date(blockStartTime.getTime() + 3600000); // Add 1 hour
     
+    const latest = await this.getLatestBlock();
+    const previousHash = latest?.blockHash || '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const payload = `${blockNumber}:${previousHash}:${now.getTime()}:${totalHashPower}:${reward}`;
+    const blockHash = '0x' + createHash('sha256').update(payload).digest('hex');
+
     const block: MiningBlock = {
       id: blockId,
       blockNumber,
       reward,
       totalHashPower,
       globalHashrate: globalHashrate || totalHashPower,
-      cumulativeIndex: null, // Add missing cumulativeIndex
+      cumulativeIndex: null,
+      blockHash,
+      previousHash,
       blockStartTime,
       blockEndTime,
-      timestamp: new Date()
+      timestamp: now
     };
     
     this.miningBlocks.set(blockId, block);
@@ -1982,27 +2049,6 @@ export class MemoryStorage implements IStorage {
     }
   }
 
-  // Add missing deposit address methods for compatibility
-  async bulkCreateAddresses(addresses: string[]): Promise<void> {
-    // Memory storage doesn't need to store these addresses
-    // Memory storage: Address creation not implemented
-  }
-
-  async deleteAddress(id: string): Promise<void> {
-    // Memory storage doesn't track individual addresses by ID
-    // Memory storage: Address deletion not implemented
-  }
-
-  async updateAddressStatus(id: string, isActive: boolean): Promise<void> {
-    // Memory storage doesn't track address status
-    // Memory storage: Address status update not implemented
-  }
-
-  async getAllActiveDepositAddresses(): Promise<any[]> {
-    // Memory storage returns empty array for active addresses
-    return [];
-  }
-
   async fixDepositStatuses(): Promise<void> {
     // Fix any deposits with "approved" status - they should be "completed"
     let fixedCount = 0;
@@ -2034,43 +2080,189 @@ export class MemoryStorage implements IStorage {
     // Fixed deposit statuses in memory storage
   }
 
-  // Global index methods for O(1) mining calculations - NOT IMPLEMENTED IN MEMORY STORAGE
+  // Global index methods for O(1) mining calculations
   async getGlobalMiningState(): Promise<{
     totalHashPower: string;
     globalRewardIndex: string;
     currentBlock: number;
     lastIndexUpdate: Date;
   }> {
-    throw new Error('Not implemented in MemoryStorage');
+    const setting = this.systemSettings.get('global_mining_state');
+    if (setting) {
+      try {
+        const state = JSON.parse(setting.value);
+        return {
+          totalHashPower: state.totalHashPower || "0",
+          globalRewardIndex: state.globalRewardIndex || "0",
+          currentBlock: state.currentBlock || 0,
+          lastIndexUpdate: new Date(state.lastIndexUpdate || Date.now())
+        };
+      } catch (e) {}
+    }
+    return {
+      totalHashPower: "0",
+      globalRewardIndex: "0",
+      currentBlock: 0,
+      lastIndexUpdate: new Date()
+    };
   }
 
   async updateGlobalIndex(newIndex: string, blockNumber: number): Promise<void> {
-    throw new Error('Not implemented in MemoryStorage');
+    const currentState = await this.getGlobalMiningState();
+    const state = {
+      ...currentState,
+      globalRewardIndex: newIndex,
+      currentBlock: blockNumber,
+      lastIndexUpdate: new Date()
+    };
+    await this.setSystemSetting('global_mining_state', JSON.stringify(state));
   }
 
   async calculateUserPending(userId: string): Promise<string> {
-    throw new Error('Not implemented in MemoryStorage');
+    const user = await this.getUser(userId);
+    if (!user) return "0";
+    
+    const globalState = await this.getGlobalMiningState();
+    const userHashPower = parseFloat(user.lockedHashPower || "0");
+    if (userHashPower === 0) return "0";
+    
+    let effectiveIndex = parseFloat(globalState.globalRewardIndex);
+    if (user.miningSuspended && user.suspensionAtBlock) {
+      const suspensionIndex = await this.getIndexAtBlock(user.suspensionAtBlock);
+      effectiveIndex = Math.min(effectiveIndex, parseFloat(suspensionIndex));
+    }
+    
+    const userIndex = parseFloat(user.userIndex || "0");
+    const indexDiff = Math.max(0, effectiveIndex - userIndex);
+    const newRewards = userHashPower * indexDiff;
+    const accruedPending = parseFloat(user.accruedPending || "0");
+    const totalPending = accruedPending + newRewards;
+    
+    return totalPending.toFixed(8);
   }
 
   async updateUserHashrate(userId: string, newHashrate: string): Promise<void> {
-    throw new Error('Not implemented in MemoryStorage');
+    const user = await this.getUser(userId);
+    if (!user) throw new Error("User not found");
+    
+    const globalState = await this.getGlobalMiningState();
+    const pending = await this.calculateUserPending(userId);
+    const oldHashrate = parseFloat(user.lockedHashPower || "0");
+    const newHashrateNum = parseFloat(newHashrate);
+    const hashDiff = newHashrateNum - oldHashrate;
+    const currentGlobalHash = parseFloat(globalState.totalHashPower);
+    const newGlobalHash = Math.max(0, currentGlobalHash + hashDiff);
+    
+    await this.setSystemSetting('global_mining_state', JSON.stringify({
+      ...globalState,
+      totalHashPower: newGlobalHash.toString()
+    }));
+    
+    await this.updateUser(userId, {
+      lockedHashPower: newHashrate,
+      accruedPending: pending,
+      userIndex: globalState.globalRewardIndex
+    });
   }
 
   async getIndexAtBlock(blockNumber: number): Promise<string> {
-    throw new Error('Not implemented in MemoryStorage');
+    for (const block of Array.from(this.miningBlocks.values())) {
+      if (block.blockNumber === blockNumber) {
+        return block.cumulativeIndex || "0";
+      }
+    }
+    return "0";
   }
 
   async settleUserRewards(userId: string): Promise<string> {
-    throw new Error('Not implemented in MemoryStorage');
+    const pending = await this.calculateUserPending(userId);
+    const globalState = await this.getGlobalMiningState();
+    
+    await this.updateUser(userId, {
+      accruedPending: pending,
+      userIndex: globalState.globalRewardIndex
+    });
+    
+    return pending;
   }
 
   async createMiningBlockWithIndex(blockNumber: number, reward: string, totalHashPower: string, cumulativeIndex: string): Promise<MiningBlock> {
-    throw new Error('Not implemented in MemoryStorage');
+    const blockId = 'block-' + randomBytes(8).toString('hex');
+    const now = new Date();
+    const blockStartTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+    const blockEndTime = new Date(blockStartTime.getTime() + 3600000);
+    
+    const latest = await this.getLatestBlock();
+    const previousHash = latest?.blockHash || '0x0000000000000000000000000000000000000000000000000000000000000000';
+    const payload = `${blockNumber}:${previousHash}:${now.getTime()}:${totalHashPower}:${reward}:${cumulativeIndex}`;
+    const blockHash = '0x' + createHash('sha256').update(payload).digest('hex');
+    
+    const block: MiningBlock = {
+      id: blockId,
+      blockNumber,
+      reward,
+      totalHashPower,
+      globalHashrate: totalHashPower,
+      cumulativeIndex,
+      blockHash,
+      previousHash,
+      blockStartTime,
+      blockEndTime,
+      timestamp: now
+    };
+    
+    this.miningBlocks.set(blockId, block);
+    return block;
   }
 
-  // Deposit Address Management methods - NOT IMPLEMENTED IN MEMORY STORAGE
+  // Audit Logs methods
+  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
+    const entry: AuditLog = {
+      id: 'audit-' + randomBytes(8).toString('hex'),
+      adminId: log.adminId,
+      adminUsername: log.adminUsername,
+      action: log.action,
+      targetType: log.targetType,
+      targetId: log.targetId || null,
+      details: log.details || null,
+      ipAddress: log.ipAddress || null,
+      createdAt: new Date(),
+    };
+    this.auditLogsList.unshift(entry);
+    return entry;
+  }
+
+  async getAuditLogs(limit = 100): Promise<AuditLog[]> {
+    return this.auditLogsList.slice(0, limit);
+  }
+
+  async getDailyWithdrawalTotal(userId: string): Promise<number> {
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    let sum = 0;
+    for (const w of Array.from(this.withdrawals.values())) {
+      if (w.userId === userId && w.status !== 'rejected') {
+        const time = w.createdAt ? new Date(w.createdAt).getTime() : 0;
+        if (time >= oneDayAgo) {
+          sum += parseFloat(w.amount || '0');
+        }
+      }
+    }
+    return sum;
+  }
+
+  // Deposit Address Management methods
   async createDepositAddress(address: string): Promise<void> {
-    throw new Error('Not implemented in MemoryStorage');
+    const id = 'addr-' + randomBytes(8).toString('hex');
+    const depositAddr: DepositAddress = {
+      id,
+      address,
+      isActive: true,
+      assignedToUserId: null,
+      assignedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.depositAddressesMap.set(id, depositAddr);
   }
 
   async assignDepositAddress(userId: string, currency: 'USDT' | 'BTC', network?: string): Promise<{
@@ -2079,11 +2271,51 @@ export class MemoryStorage implements IStorage {
     expiresAt: Date;
     isNewAssignment: boolean;
   }> {
-    throw new Error('Not implemented in MemoryStorage');
+    const existing = await this.getUserAddressAssignment(userId, currency, network);
+    if (existing && new Date(existing.expiresAt) > new Date()) {
+      return {
+        address: existing.address,
+        assignedAt: new Date(existing.assignedAt),
+        expiresAt: new Date(existing.expiresAt),
+        isNewAssignment: false
+      };
+    }
+
+    let assignedAddr = "0x71C8360662287a950FeE2a568bFa0989fDE4190c";
+    for (const addr of Array.from(this.depositAddressesMap.values())) {
+      if (addr.isActive && (!addr.assignedToUserId || addr.assignedToUserId === userId)) {
+        assignedAddr = addr.address;
+        addr.assignedToUserId = userId;
+        addr.assignedAt = new Date();
+        break;
+      }
+    }
+
+    const assignedAt = new Date();
+    const expiresAt = new Date(assignedAt.getTime() + 24 * 60 * 60 * 1000);
+    const assignment: UserAddressAssignment = {
+      id: 'assign-' + randomBytes(8).toString('hex'),
+      userId,
+      currency,
+      network: network || null,
+      address: assignedAddr,
+      assignedAt,
+      expiresAt,
+      createdAt: assignedAt
+    };
+    this.userAddressAssignmentsMap.set(userId + currency, assignment);
+
+    return {
+      address: assignedAddr,
+      assignedAt,
+      expiresAt,
+      isNewAssignment: true
+    };
   }
 
-  async getUserAddressAssignment(userId: string, currency: 'USDT' | 'BTC', network?: string): Promise<any | null> {
-    throw new Error('Not implemented in MemoryStorage');
+  async getUserAddressAssignment(userId: string, currency: 'USDT' | 'BTC', network?: string): Promise<UserAddressAssignment | null> {
+    const assignment = this.userAddressAssignmentsMap.get(userId + currency);
+    return assignment || null;
   }
 
   async getRandomAvailableAddress(userId: string): Promise<{ 
@@ -2091,15 +2323,55 @@ export class MemoryStorage implements IStorage {
     canGetNewAddress: boolean; 
     hoursUntilNewAddress: number; 
   }> {
-    throw new Error('Not implemented in MemoryStorage');
+    for (const addr of Array.from(this.depositAddressesMap.values())) {
+      if (addr.isActive) {
+        return {
+          address: addr.address,
+          canGetNewAddress: true,
+          hoursUntilNewAddress: 0
+        };
+      }
+    }
+    return {
+      address: "0x71C8360662287a950FeE2a568bFa0989fDE4190c",
+      canGetNewAddress: true,
+      hoursUntilNewAddress: 0
+    };
   }
 
   async releaseAddress(userId: string): Promise<void> {
-    throw new Error('Not implemented in MemoryStorage');
+    for (const addr of Array.from(this.depositAddressesMap.values())) {
+      if (addr.assignedToUserId === userId) {
+        addr.assignedToUserId = null;
+        addr.assignedAt = null;
+      }
+    }
   }
 
-  async getDepositAddresses(): Promise<any[]> {
-    throw new Error('Not implemented in MemoryStorage');
+  async getDepositAddresses(): Promise<DepositAddress[]> {
+    return Array.from(this.depositAddressesMap.values());
+  }
+
+  async getAllActiveDepositAddresses(): Promise<DepositAddress[]> {
+    return Array.from(this.depositAddressesMap.values()).filter(a => a.isActive);
+  }
+
+  async bulkCreateAddresses(addresses: string[]): Promise<void> {
+    for (const address of addresses) {
+      await this.createDepositAddress(address);
+    }
+  }
+
+  async deleteAddress(id: string): Promise<void> {
+    this.depositAddressesMap.delete(id);
+  }
+
+  async updateAddressStatus(id: string, isActive: boolean): Promise<void> {
+    const addr = this.depositAddressesMap.get(id);
+    if (addr) {
+      addr.isActive = isActive;
+      addr.updatedAt = new Date();
+    }
   }
 
   async fixDepositStatuses2(): Promise<void> {

@@ -798,92 +798,112 @@ export default function Whitepaper() {
         
         <p>This ensures transparent distribution across all active miners.</p>
         
-        <h2><span class="section-number">4.</span>Block Emission Schedule</h2>
+        <h2><span class="section-number">4.</span>Block Emission Schedule & Halving Scenarios</h2>
         
-        <p>Quarterly Halving reduces block rewards over time to ensure fairness with early adopters while enhance & balance scarcity overtime.</p>
+        <p>A structured halving cycle reduces block rewards at scheduled block intervals to maintain monetary predictability, ensure fairness for early participants, and introduce programmed digital scarcity toward the 21,000,000 B2B maximum supply.</p>
         
         <div class="emission-schedule">
             <div class="emission-item">
                 <div class="emission-header">
-                    <span class="emission-title">Genesis Period</span>
+                    <span class="emission-title">Genesis Period (Block 0 - 20,999)</span>
                     <span class="emission-date">Q4 2025 - Q1 2026</span>
                 </div>
                 <div class="progress-bar"><div class="progress-fill genesis" style="width: 100%"></div></div>
                 <div class="emission-footer">
-                    <span class="emission-sub">Initial Rewards</span>
-                    <span class="emission-rate">100% Rate</span>
+                    <span class="emission-sub">Initial Reward: 50.00 B2B / block</span>
+                    <span class="emission-rate">100% Emission Rate</span>
                 </div>
             </div>
             
             <div class="emission-item">
                 <div class="emission-header">
-                    <span class="emission-title">First Halving</span>
-                    <span class="emission-date">Q1 2026 - Q2 2026</span>
+                    <span class="emission-title">First Halving (Block 21,000 - 41,999)</span>
+                    <span class="emission-date">Q2 2026 - Q3 2026</span>
                 </div>
                 <div class="progress-bar"><div class="progress-fill first" style="width: 50%"></div></div>
                 <div class="emission-footer">
-                    <span class="emission-sub">Reduced Rewards</span>
-                    <span class="emission-rate">50% Rate</span>
+                    <span class="emission-sub">Reward Cut: 25.00 B2B / block</span>
+                    <span class="emission-rate">50% Emission Rate</span>
                 </div>
             </div>
             
             <div class="emission-item">
                 <div class="emission-header">
-                    <span class="emission-title">Second Halving</span>
-                    <span class="emission-date">Q2 2026 - Q3 2026</span>
+                    <span class="emission-title">Second Halving (Block 42,000 - 62,999)</span>
+                    <span class="emission-date">Q4 2026 - Q1 2027</span>
                 </div>
                 <div class="progress-bar"><div class="progress-fill second" style="width: 25%"></div></div>
                 <div class="emission-footer">
-                    <span class="emission-sub">Quarter Rewards</span>
-                    <span class="emission-rate">25% Rate</span>
+                    <span class="emission-sub">Reward Cut: 12.50 B2B / block</span>
+                    <span class="emission-rate">25% Emission Rate</span>
                 </div>
             </div>
             
             <div class="emission-item">
                 <div class="emission-header">
-                    <span class="emission-title">Third Halving</span>
-                    <span class="emission-date">Q3 2026 - Q4 2026</span>
+                    <span class="emission-title">Third Halving (Block 63,000 - 83,999)</span>
+                    <span class="emission-date">Q2 2027 - Q3 2027</span>
                 </div>
                 <div class="progress-bar"><div class="progress-fill third" style="width: 12.5%"></div></div>
                 <div class="emission-footer">
-                    <span class="emission-sub">Eighth Rewards</span>
-                    <span class="emission-rate">12.5% Rate</span>
+                    <span class="emission-sub">Reward Cut: 6.25 B2B / block</span>
+                    <span class="emission-rate">12.5% Emission Rate</span>
+                </div>
+            </div>
+
+            <div class="emission-item">
+                <div class="emission-header">
+                    <span class="emission-title">Fourth Halving (Block 84,000 - 104,999)</span>
+                    <span class="emission-date">Q4 2027 - Q1 2028</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill fourth" style="width: 6.25%; background: linear-gradient(to right, #F7931A, #B55A1A);"></div></div>
+                <div class="emission-footer">
+                    <span class="emission-sub">Reward Cut: 3.125 B2B / block</span>
+                    <span class="emission-rate">6.25% Emission Rate</span>
                 </div>
             </div>
             
             <div class="emission-item opacity-70">
                 <div class="emission-header">
-                    <span class="emission-title">Subsequent Halvings</span>
-                    <span class="emission-date">Q4 2026+</span>
+                    <span class="emission-title">Subsequent Halvings (Block 105,000+)</span>
+                    <span class="emission-date">2028 - 2032+</span>
                 </div>
-                <div class="progress-bar"><div class="progress-fill subsequent" style="width: 6%"></div></div>
+                <div class="progress-bar"><div class="progress-fill subsequent" style="width: 3%"></div></div>
                 <div class="emission-footer">
-                    <span class="emission-sub">Diminishing Rewards</span>
-                    <span class="emission-rate">&lt; 12.5% Rate</span>
+                    <span class="emission-sub">Diminishing Tail Emission</span>
+                    <span class="emission-rate">&lt; 3.125% Rate</span>
                 </div>
             </div>
         </div>
+
+        <h3>Halving Scenario Analysis</h3>
+        <p>Three strategic macroeconomic scenarios govern the network during halving transitions:</p>
+        <ul>
+            <li><strong>Scenario A: High Hashrate Acceleration (Supply Shock)</strong> &mdash; In periods of rapid miner onboarding and network hashrate growth, daily token creation remains strictly fixed at 144 blocks per day while global competition intensifies. Difficulty increases dynamically, compressing per-miner yields and creating strong upward scarcity pressure. The 25% circulation listing target (5,250,000 B2B) is accelerated toward mid-2026.</li>
+            <li><strong>Scenario B: Linear Equilibrium Growth</strong> &mdash; Miners maintain consistent participation under balanced difficulty adjustment cycles. Each quarterly/bi-annual halving drops daily token issuance by 50% (from 7,200 B2B/day in Genesis to 3,600 B2B/day at Halving 1, and 1,800 B2B/day at Halving 2), providing predictable deflationary tokenomics.</li>
+            <li><strong>Scenario C: Fee-Dominant Equilibrium (2028+)</strong> &mdash; As block subsidies taper toward fractional amounts, network validator compensation naturally pivots from inflationary block minting to internal and on-chain transaction processing fees.</li>
+        </ul>
         
         <div class="distribution-box">
             <h3>Total Supply Distribution</h3>
             <div class="dist-item">
                 <div class="dist-header">
                     <span class="dist-label">App Mining Distribution</span>
-                    <span class="dist-value">65.5%</span>
+                    <span class="dist-value">65.5% (13,755,000 B2B)</span>
                 </div>
                 <div class="progress-bar-sm"><div class="progress-fill" style="width: 65.5%"></div></div>
             </div>
             <div class="dist-item">
                 <div class="dist-header">
-                    <span class="dist-label">Reserved for Future</span>
-                    <span class="dist-value-reserved">34.5%</span>
+                    <span class="dist-label">Ecosystem & Liquidity Reserve</span>
+                    <span class="dist-value-reserved">34.5% (7,245,000 B2B)</span>
                 </div>
                 <div class="progress-bar-sm"><div class="progress-fill-reserved" style="width: 34.5%"></div></div>
             </div>
         </div>
         
         <p style="font-size: 14px; color: #9AA3AF;">
-            First Halving Is Occur From Q1 2026. Scarcity increases with each halving cycle, supporting long-term sustainability.
+            First Halving Milestone takes effect at Block 21,000 (Target: Q2 2026). Digital scarcity multiplies with each halving cycle toward the hard cap of 21,000,000 B2B tokens.
         </p>
         
         <h2><span class="section-number">5.</span>Conclusion</h2>
@@ -1092,14 +1112,14 @@ export default function Whitepaper() {
               {/* First Halving */}
               <div className="bg-[#111316] border border-[#16181D] rounded-lg p-5">
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-[#E5E7EB] font-medium">First Halving</span>
-                  <span className="text-[#6B7280] text-sm">Q1 2026 - Q2 2026</span>
+                  <span className="text-[#E5E7EB] font-medium">First Halving (Block 21,000)</span>
+                  <span className="text-[#6B7280] text-sm">Q2 2026 - Q3 2026</span>
                 </div>
                 <div className="w-full h-3 bg-[#0D0F14] rounded-full overflow-hidden">
                   <div className="h-full bg-gradient-to-r from-[#F7931A] to-[#E88A1A]" style={{ width: '50%' }}></div>
                 </div>
                 <div className="flex justify-between mt-2">
-                  <span className="text-[#9AA3AF] text-xs">Reduced Rewards</span>
+                  <span className="text-[#9AA3AF] text-xs">Reward Cut: 25.00 B2B / block</span>
                   <span className="text-[#F7931A] text-xs font-medium">50% Rate</span>
                 </div>
               </div>
@@ -1107,14 +1127,14 @@ export default function Whitepaper() {
               {/* Second Halving */}
               <div className="bg-[#111316] border border-[#16181D] rounded-lg p-5">
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-[#E5E7EB] font-medium">Second Halving</span>
-                  <span className="text-[#6B7280] text-sm">Q2 2026 - Q3 2026</span>
+                  <span className="text-[#E5E7EB] font-medium">Second Halving (Block 42,000)</span>
+                  <span className="text-[#6B7280] text-sm">Q4 2026 - Q1 2027</span>
                 </div>
                 <div className="w-full h-3 bg-[#0D0F14] rounded-full overflow-hidden">
                   <div className="h-full bg-gradient-to-r from-[#F7931A] to-[#D77A1A]" style={{ width: '25%' }}></div>
                 </div>
                 <div className="flex justify-between mt-2">
-                  <span className="text-[#9AA3AF] text-xs">Quarter Rewards</span>
+                  <span className="text-[#9AA3AF] text-xs">Reward Cut: 12.50 B2B / block</span>
                   <span className="text-[#F7931A] text-xs font-medium">25% Rate</span>
                 </div>
               </div>
@@ -1122,30 +1142,75 @@ export default function Whitepaper() {
               {/* Third Halving */}
               <div className="bg-[#111316] border border-[#16181D] rounded-lg p-5">
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-[#E5E7EB] font-medium">Third Halving</span>
-                  <span className="text-[#6B7280] text-sm">Q3 2026 - Q4 2026</span>
+                  <span className="text-[#E5E7EB] font-medium">Third Halving (Block 63,000)</span>
+                  <span className="text-[#6B7280] text-sm">Q2 2027 - Q3 2027</span>
                 </div>
                 <div className="w-full h-3 bg-[#0D0F14] rounded-full overflow-hidden">
                   <div className="h-full bg-gradient-to-r from-[#F7931A] to-[#C66A1A]" style={{ width: '12.5%' }}></div>
                 </div>
                 <div className="flex justify-between mt-2">
-                  <span className="text-[#9AA3AF] text-xs">Eighth Rewards</span>
+                  <span className="text-[#9AA3AF] text-xs">Reward Cut: 6.25 B2B / block</span>
                   <span className="text-[#F7931A] text-xs font-medium">12.5% Rate</span>
+                </div>
+              </div>
+
+              {/* Fourth Halving */}
+              <div className="bg-[#111316] border border-[#16181D] rounded-lg p-5">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-[#E5E7EB] font-medium">Fourth Halving (Block 84,000)</span>
+                  <span className="text-[#6B7280] text-sm">Q4 2027 - Q1 2028</span>
+                </div>
+                <div className="w-full h-3 bg-[#0D0F14] rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-[#F7931A] to-[#B55A1A]" style={{ width: '6.25%' }}></div>
+                </div>
+                <div className="flex justify-between mt-2">
+                  <span className="text-[#9AA3AF] text-xs">Reward Cut: 3.125 B2B / block</span>
+                  <span className="text-[#F7931A] text-xs font-medium">6.25% Rate</span>
                 </div>
               </div>
 
               {/* Subsequent Halvings */}
               <div className="bg-[#111316] border border-[#16181D] rounded-lg p-5 opacity-70">
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-[#E5E7EB] font-medium">Subsequent Halvings</span>
-                  <span className="text-[#6B7280] text-sm">Q4 2026+</span>
+                  <span className="text-[#E5E7EB] font-medium">Subsequent Halvings (Block 105,000+)</span>
+                  <span className="text-[#6B7280] text-sm">2028 - 2032+</span>
                 </div>
                 <div className="w-full h-3 bg-[#0D0F14] rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-[#F7931A] to-[#B55A1A]" style={{ width: '6%' }}></div>
+                  <div className="h-full bg-gradient-to-r from-[#F7931A] to-[#8F3E0A]" style={{ width: '3%' }}></div>
                 </div>
                 <div className="flex justify-between mt-2">
-                  <span className="text-[#9AA3AF] text-xs">Diminishing Rewards</span>
-                  <span className="text-[#F7931A] text-xs font-medium">&lt; 12.5% Rate</span>
+                  <span className="text-[#9AA3AF] text-xs">Diminishing Tail Emission</span>
+                  <span className="text-[#F7931A] text-xs font-medium">&lt; 3.125% Rate</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Halving Scenarios Analysis */}
+            <div className="space-y-4 mb-6">
+              <h3 className="text-lg font-semibold text-white">Halving Macroeconomic Scenarios</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-[#111316] border border-[#16181D] rounded-lg p-4">
+                  <div className="text-[#F7931A] text-xs font-mono font-bold mb-1 uppercase tracking-wider">Scenario A</div>
+                  <h4 className="text-sm font-semibold text-white mb-2">Supply Shock & Hashrate Surge</h4>
+                  <p className="text-xs text-[#9AA3AF] leading-relaxed">
+                    Rapid miner influx drives difficulty up while daily token issuance remains strictly locked at 144 blocks/day. Accelerates progress toward 25% circulation exchange listing by mid-2026.
+                  </p>
+                </div>
+
+                <div className="bg-[#111316] border border-[#16181D] rounded-lg p-4">
+                  <div className="text-emerald-400 text-xs font-mono font-bold mb-1 uppercase tracking-wider">Scenario B</div>
+                  <h4 className="text-sm font-semibold text-white mb-2">Linear Equilibrium Growth</h4>
+                  <p className="text-xs text-[#9AA3AF] leading-relaxed">
+                    Miner onboarding matches predictable difficulty adjustments. 50% issuance cuts every 21,000 blocks halve daily dilution, supporting healthy sustained market dynamics.
+                  </p>
+                </div>
+
+                <div className="bg-[#111316] border border-[#16181D] rounded-lg p-4">
+                  <div className="text-blue-400 text-xs font-mono font-bold mb-1 uppercase tracking-wider">Scenario C</div>
+                  <h4 className="text-sm font-semibold text-white mb-2">Fee-Dominant Era (2028+)</h4>
+                  <p className="text-xs text-[#9AA3AF] leading-relaxed">
+                    As block subsidies diminish toward zero, transaction fees from cross-chain transfers and merchant settlement replace issuance as primary miner revenue.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1176,7 +1241,7 @@ export default function Whitepaper() {
             </div>
             
             <p className="leading-relaxed text-sm text-[#9AA3AF]">
-              First Halving Is Occur From Q1 2026. Scarcity increases with each halving cycle, supporting long-term sustainability.
+              First Halving occurs at Block 21,000 (Target: Q2 2026). Scarcity increases with each scheduled cycle toward the 21,000,000 B2B hard cap.
             </p>
 
           </motion.div>

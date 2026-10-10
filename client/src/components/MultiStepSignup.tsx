@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +36,7 @@ type SignupStep = 'disclaimer' | 'username' | 'referral' | 'keys' | 'complete';
 const SIGNUP_STEPS = [
   { id: 'disclaimer' as const, title: 'Terms & Privacy', icon: Shield },
   { id: 'username' as const, title: 'Username', icon: User },
-  { id: 'referral' as const, title: 'Referral Username', icon: Users },
+  { id: 'referral' as const, title: 'Referral Code', icon: Users },
   { id: 'keys' as const, title: 'Access Key', icon: Key }
 ];
 
@@ -54,6 +54,17 @@ export default function MultiStepSignup({ onBack }: MultiStepSignupProps) {
   // Access key state
   const [generatedAccessKey, setGeneratedAccessKey] = useState<string | null>(null);
   const [showAccessKey, setShowAccessKey] = useState(false);
+
+  // Auto pre-fill referral code from query params or sessionStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get('ref') || params.get('referredBy') || params.get('r') || sessionStorage.getItem('referral_prefill');
+      if (ref) {
+        setSignupData(prev => ({ ...prev, referralUsername: ref.trim() }));
+      }
+    }
+  }, []);
 
   const currentStepIndex = SIGNUP_STEPS.findIndex(step => step.id === currentStep);
   const progress = ((currentStepIndex + 1) / SIGNUP_STEPS.length) * 100;
@@ -314,20 +325,29 @@ Access Key: ${generatedAccessKey}
             <CardContent>
               <form onSubmit={handleReferralSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="signup-referral">Referral Username (Optional)</Label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Label htmlFor="signup-referral" className="text-xs text-gray-300">
+                      Referral Code or Username (Optional)
+                    </Label>
+                    {signupData.referralUsername && (
+                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] font-mono">
+                        ✓ Invite Applied
+                      </Badge>
+                    )}
+                  </div>
                   <Input
                     id="signup-referral"
                     type="text"
-                    placeholder="Enter the username of who invited you"
+                    placeholder="e.g. 8-char code or username"
                     value={signupData.referralUsername}
                     onChange={(e) => {
-                      const value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+                      const value = e.target.value.trim().slice(0, 30);
                       setSignupData(prev => ({ ...prev, referralUsername: value }));
                     }}
-                    className="bg-black border-gray-800 font-mono"
+                    className="bg-black border-gray-800 font-mono text-sm"
                     data-testid="input-signup-referral"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Enter the username of the person who invited you (leave blank to skip)</p>
+                  <p className="text-xs text-gray-500 mt-1">Enter your partner's referral code or username (or leave blank)</p>
                 </div>
 
                 

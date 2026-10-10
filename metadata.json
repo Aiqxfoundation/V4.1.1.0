@@ -1,0 +1,8 @@
+{
+  "name": "BIT2BLOCK Mining",
+  "description": "BIT2BLOCK B2B cloud mining and staking platform with real-time hashrate monitoring and reward distribution.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

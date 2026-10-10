@@ -42,6 +42,8 @@ export default function AuthPage() {
   });
   const [hasIpRegistered, setHasIpRegistered] = useState<boolean | null>(null);
   const [showBanDialog, setShowBanDialog] = useState(false);
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
 
   // Check if this IP has already registered an account
   useEffect(() => {
@@ -59,6 +61,18 @@ export default function AuthPage() {
     };
 
     checkIpRegistration();
+  }, []);
+
+  // Auto-detect referral link in query params and open signup
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get('ref') || params.get('referredBy') || params.get('r') || sessionStorage.getItem('referral_prefill');
+      if (ref) {
+        setRegisterForm(prev => ({ ...prev, referredBy: ref }));
+        setShowMultiStepSignup(true);
+      }
+    }
   }, []);
 
   // Redirect if already logged in
@@ -181,6 +195,16 @@ Access Key: ${generatedAccessKey}
         username: loginForm.username,
         accessKey: loginForm.accessKey
       }, {
+        onSuccess: (data: any) => {
+          if (data?.require2FA) {
+            setShow2FAModal(true);
+            toast({
+              title: "2FA Verification Required",
+              description: "Please enter the 6-digit code from your authenticator app.",
+              className: "border-[#f7931a] bg-gray-900 text-white"
+            });
+          }
+        },
         onError: (error: any) => {
           // Check if it's a permanent ban error
           if (error.isPermanentlyBanned || error.message?.includes("permanently banned")) {
@@ -191,6 +215,38 @@ Access Key: ${generatedAccessKey}
         }
       });
     }
+  };
+
+  const handleVerify2FALogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFactorCode || twoFactorCode.length !== 6) {
+      toast({
+        title: "Invalid Code",
+        description: "Please enter a valid 6-digit verification code",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    loginMutation.mutate({
+      username: loginForm.username,
+      accessKey: loginForm.accessKey,
+      twoFactorCode
+    }, {
+      onSuccess: (data: any) => {
+        if (!data?.require2FA) {
+          setShow2FAModal(false);
+          setTwoFactorCode("");
+        }
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Verification Failed",
+          description: error.message || "Invalid 2FA code",
+          variant: "destructive"
+        });
+      }
+    });
   };
 
   return (
@@ -536,6 +592,67 @@ Access Key: ${generatedAccessKey}
               </p>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 2FA Verification Dialog */}
+      <Dialog open={show2FAModal} onOpenChange={setShow2FAModal}>
+        <DialogContent className="max-w-md bg-gray-950 border-2 border-[#f7931a]">
+          <DialogHeader>
+            <DialogTitle className="text-lg text-[#f7931a] flex items-center gap-2">
+              <Shield className="w-5 h-5 text-[#f7931a]" />
+              Two-Factor Authentication
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleVerify2FALogin} className="space-y-4">
+            <p className="text-xs text-gray-300">
+              Enter the 6-digit code from your Google Authenticator or TOTP app to authorize login for <span className="font-bold text-white">@{loginForm.username}</span>.
+            </p>
+            <div>
+              <Label htmlFor="2fa-login-code" className="text-xs text-gray-300">
+                Authenticator Code
+              </Label>
+              <Input
+                id="2fa-login-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                className="bg-black border-[#f7931a]/40 text-center tracking-widest text-xl font-mono text-white mt-1"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 border-gray-700 text-gray-300"
+                onClick={() => {
+                  setShow2FAModal(false);
+                  setTwoFactorCode("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loginMutation.isPending || twoFactorCode.length !== 6}
+                className="flex-1 bg-[#f7931a] hover:bg-[#e5851a] text-black font-bold"
+              >
+                {loginMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  "Verify & Login"
+                )}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

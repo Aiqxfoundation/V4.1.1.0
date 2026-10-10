@@ -6,6 +6,13 @@ import { promisify } from "util";
 const asyncScrypt = promisify(scrypt);
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
+import { 
+  checkLoginRateLimit, 
+  recordFailedLogin, 
+  resetLoginAttempts, 
+  checkRegistrationRateLimit, 
+  verifyTotpToken 
+} from "./security";
 
 declare global {
   namespace Express {
@@ -35,7 +42,7 @@ function getClientIp(req: any): string {
 
 
 // Generate unique access key in format B2B-XXXXX-XXXXX-XXXXX-XXXXX
-function generateUniqueAccessKey(): string {
+export function generateUniqueAccessKey(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const segments = [];
   
@@ -53,14 +60,14 @@ function generateUniqueAccessKey(): string {
 }
 
 // Hash access key for secure storage
-async function hashAccessKey(accessKey: string): Promise<string> {
+export async function hashAccessKey(accessKey: string): Promise<string> {
   const salt = randomBytes(16);
   const hash = await asyncScrypt(accessKey, salt, 32) as Buffer;
   return `${salt.toString('hex')}:${hash.toString('hex')}`;
 }
 
 // Verify access key against stored hash
-async function verifyAccessKey(accessKey: string, hashedKey: string): Promise<boolean> {
+export async function verifyAccessKey(accessKey: string, hashedKey: string): Promise<boolean> {
   try {
     const [saltHex, hashHex] = hashedKey.split(':');
     if (!saltHex || !hashHex) return false;
@@ -114,7 +121,12 @@ export function setupAuth(app: Express) {
   // Registration endpoint - generates unique access key
   app.post("/api/register", async (req, res, next) => {
     try {
-      const { username, referralUsername, deviceData } = req.body;
+      const { username, referralUsername, referredBy: bodyReferredBy, deviceData } = req.body;
+      const clientIp = getClientIp(req);
+
+      if (!checkRegistrationRateLimit(clientIp)) {
+        return res.status(429).json({ message: "Registration limit exceeded. Please wait before registering again." });
+      }
       
       if (!username) {
         return res.status(400).json({ message: "Please enter a valid username to create your account." });
@@ -173,22 +185,37 @@ export function setupAuth(app: Express) {
         return code + timestamp;
       };
 
-      // Validate referral username (required)
-      let validatedReferredBy = undefined;
+      // Validate referral code or username
+      let validatedReferredBy: string | undefined = undefined;
+      const rawReferralInput = (referralUsername || bodyReferredBy || '').trim();
+      let matchedReferralCodeObj: any = null;
       
-      if (referralUsername) {
-        // Check if the username exists in the system
-        const referrer = await storage.getUserByUsername(referralUsername);
+      if (rawReferralInput) {
+        // 1. Try finding by username
+        let referrer = await storage.getUserByUsername(rawReferralInput);
+        
+        // 2. If not found by username, try finding by user's own referral code
+        if (!referrer) {
+          referrer = await storage.findUserByOwnReferralCode(rawReferralInput);
+        }
+        
+        // 3. If still not found, check single-use referral codes table
+        if (!referrer) {
+          const codeObj = await storage.getReferralCodeByCode(rawReferralInput);
+          if (codeObj) {
+            matchedReferralCodeObj = codeObj;
+            referrer = (await storage.getUser(codeObj.ownerId)) || null;
+          }
+        }
         
         if (!referrer) {
-          // Username doesn't exist at all
           return res.status(400).json({ 
-            message: "Invalid Referral Username: The username '" + referralUsername + "' does not exist in our system. Please verify the username with the person who invited you and ensure it's entered correctly." 
+            message: `Invalid Referral: The referral code or username '${rawReferralInput}' does not exist in our system. Please verify and ensure it is entered correctly.` 
           });
         }
         
-        // Username exists - valid! Store the username directly
-        validatedReferredBy = referralUsername;
+        // Use the canonical referrer username
+        validatedReferredBy = referrer.username;
       }
 
 
@@ -217,7 +244,9 @@ export function setupAuth(app: Express) {
         await storage.linkUserToDevice(user.id, deviceResult.device.id);
       }
       
-      // No need to mark anything as used since we're using usernames directly
+      if (matchedReferralCodeObj) {
+        await storage.markReferralCodeUsed(matchedReferralCodeObj.code, user.id);
+      }
       
       // Return user data with the plain access key (only time it's shown)
       res.status(201).json({ ...user, accessKey });
@@ -251,8 +280,17 @@ export function setupAuth(app: Express) {
   // Simple login endpoint - uses username and access key
   app.post("/api/login", async (req, res) => {
     try {
-      const { username, accessKey } = req.body;
+      const { username, accessKey, twoFactorCode } = req.body;
+      const clientIp = getClientIp(req);
+      const rateLimitKey = `${clientIp}:${username || 'unknown'}`;
       
+      const rateCheck = checkLoginRateLimit(rateLimitKey);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({ 
+          message: `Too many failed login attempts. Please wait ${rateCheck.waitMinutes || 15} minutes before trying again.` 
+        });
+      }
+
       if (!username || !accessKey) {
         return res.status(400).json({ message: "Username and access key are required" });
       }
@@ -270,6 +308,24 @@ export function setupAuth(app: Express) {
 
       // Both conditions must be true for successful login
       if (user && isValidAccessKey) {
+        // If user has 2FA enabled, verify code
+        if (user.twoFactorEnabled && user.twoFactorSecret) {
+          if (!twoFactorCode) {
+            return res.json({ 
+              require2FA: true, 
+              message: "Two-factor authentication code required" 
+            });
+          }
+          const isTotpValid = verifyTotpToken(twoFactorCode, user.twoFactorSecret);
+          if (!isTotpValid) {
+            recordFailedLogin(rateLimitKey);
+            return res.status(401).json({ message: "Invalid two-factor authentication code" });
+          }
+        }
+
+        // Reset rate limiting on success
+        resetLoginAttempts(rateLimitKey);
+
         // SPECIAL HANDLING: super_admin can NEVER be banned
         if (user.username === 'super_admin') {
           // Force unban super_admin immediately
@@ -310,6 +366,7 @@ export function setupAuth(app: Express) {
           isFrozen: user.isFrozen || false // Include frozen status in response
         });
       } else {
+        recordFailedLogin(rateLimitKey);
         // Always return the same generic error message
         return res.status(401).json({ message: GENERIC_ERROR });
       }

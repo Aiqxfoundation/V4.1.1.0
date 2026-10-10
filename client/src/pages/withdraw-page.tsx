@@ -13,6 +13,8 @@ export default function WithdrawPage() {
   const { toast } = useToast();
   const [amount, setAmount] = useState('');
   const [address, setAddress] = useState('');
+  const [securityPin, setSecurityPin] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [cooldownEndTime, setCooldownEndTime] = useState<number | null>(null);
   
@@ -74,7 +76,7 @@ export default function WithdrawPage() {
   }, [cooldownEndTime, refetchCooldown]);
 
   const createWithdrawalMutation = useMutation({
-    mutationFn: async (data: { amount: string; address: string; network: string }) => {
+    mutationFn: async (data: { amount: string; address: string; network: string; securityPin: string; twoFactorCode?: string }) => {
       const res = await apiRequest("POST", "/api/withdrawals", data);
       if (!res.ok) {
         const error = await res.json().catch(() => ({ message: "Failed to process withdrawal" }));
@@ -89,6 +91,8 @@ export default function WithdrawPage() {
       });
       setAmount('');
       setAddress('');
+      setSecurityPin('');
+      setTwoFactorCode('');
       queryClient.invalidateQueries({ queryKey: ["/api/withdrawals"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       refetchCooldown();
@@ -156,11 +160,31 @@ export default function WithdrawPage() {
       });
       return;
     }
+
+    if (!securityPin || securityPin.length !== 6) {
+      toast({
+        title: "Security PIN Required",
+        description: "Please enter your 6-digit security PIN to authorize this withdrawal.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (user?.twoFactorEnabled && (!twoFactorCode || twoFactorCode.length !== 6)) {
+      toast({
+        title: "2FA Code Required",
+        description: "Please enter your 6-digit Google Authenticator code.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     createWithdrawalMutation.mutate({
       amount: withdrawAmount.toString(),
       address: address.trim(),
-      network: 'ERC20'
+      network: 'ERC20',
+      securityPin: securityPin.trim(),
+      twoFactorCode: twoFactorCode ? twoFactorCode.trim() : undefined
     });
   };
 
@@ -222,10 +246,51 @@ export default function WithdrawPage() {
                 className="font-mono text-sm"
                 data-testid="input-withdraw-amount"
               />
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Min: 50 USDT | Max: {Math.max(0, usdtBalance - withdrawFee).toFixed(2)} USDT
+              <p className="text-[10px] text-muted-foreground mt-1 flex justify-between">
+                <span>Min: 50 USDT | Max: {Math.max(0, usdtBalance - withdrawFee).toFixed(2)} USDT</span>
+                <span className="text-amber-400">Daily limit: {user?.dailyWithdrawalLimit || '1000.00'} USDT</span>
               </p>
             </div>
+
+            {/* Security PIN Input (Mandatory) */}
+            <div>
+              <label className="text-xs text-muted-foreground font-mono mb-1.5 block">
+                SECURITY PIN (6 DIGITS) *
+              </label>
+              <Input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={securityPin}
+                onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, ''))}
+                placeholder="Enter 6-digit PIN"
+                className="font-mono text-sm tracking-widest"
+                data-testid="input-withdraw-pin"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Required for all withdrawals. Set or change in Account settings.
+              </p>
+            </div>
+
+            {/* 2FA Code Input (if enabled) */}
+            {user?.twoFactorEnabled && (
+              <div>
+                <label className="text-xs text-muted-foreground font-mono mb-1.5 block flex items-center justify-between">
+                  <span>2FA AUTHENTICATOR CODE *</span>
+                  <span className="text-[10px] text-green-400">2FA Active</span>
+                </label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={twoFactorCode}
+                  onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Enter 6-digit 2FA code"
+                  className="font-mono text-sm tracking-widest"
+                  data-testid="input-withdraw-2fa"
+                />
+              </div>
+            )}
 
             {/* Summary */}
             {amount && parseFloat(amount) > 0 && (

@@ -177,26 +177,52 @@ async function generateAndDistributeBlock() {
     
     console.log(`Block ${totalBlockHeight}: ${activeMinersCount} active miners, ${globalHashrateStr} TH/s locked hashrate`);
     
-    // Create the mining block
-    const block = await storage.createMiningBlock(
+    // Calculate cumulative reward index for O(1) system
+    const globalState = await storage.getGlobalMiningState();
+    let currentGlobalIndex = parseFloat(globalState.globalRewardIndex || '0');
+    let rewardPerHash = 0;
+    if (globalHashrate > 0) {
+      rewardPerHash = currentBlockReward / globalHashrate;
+    }
+    const newGlobalIndex = (currentGlobalIndex + rewardPerHash).toFixed(18);
+    await storage.updateGlobalIndex(newGlobalIndex, totalBlockHeight);
+
+    // Create the mining block with cryptographic hash and cumulative index
+    const block = await storage.createMiningBlockWithIndex(
       totalBlockHeight,
       currentBlockReward.toFixed(8),
       totalHashPower,
-      globalHashrateStr
+      newGlobalIndex
     );
     
     // Update block reward setting
     await storage.setSystemSetting("blockReward", currentBlockReward.toString());
     
-    // FAIRNESS MECHANISM: Distribute rewards proportionally based on LOCKED hash rates
-    // Users receive rewards based on their contribution during the PREVIOUS hour
+    // FAIRNESS & O(1) REWARD DISTRIBUTION:
+    // Distribute rewards proportionally based on LOCKED hash rates
+    // Suspended users (>=24 unclaimed blocks) stop receiving new blocks until claiming
     if (globalHashrate > 0) {
       for (const user of users) {
         if (user.miningActive && parseFloat(user.lockedHashPower || '0') > 0) {
+          const unclaimedCount = user.unclaimedBlocksCount || 0;
+          
+          // Check 24-block suspension rule
+          if (unclaimedCount >= 24) {
+            // Auto-suspend user from receiving further block rewards
+            if (!user.miningSuspended) {
+              await storage.updateUser(user.id, {
+                miningSuspended: true,
+                suspensionAtBlock: totalBlockHeight
+              });
+              console.log(`User ${user.username} suspended at block ${totalBlockHeight} (accumulated 24 unclaimed blocks)`);
+            }
+            continue;
+          }
+
           const userReward = await storage.calculateUserReward(user.id, currentBlockReward.toString());
           
           if (parseFloat(userReward) > 0) {
-            // Create unclaimed block for user
+            // Create unclaimed block for user with cryptographic block reference
             const txHash = generateTxHash();
             await storage.createUnclaimedBlock(
               user.id,
@@ -213,16 +239,23 @@ async function generateAndDistributeBlock() {
               userReward
             );
             
-            // Increment user's personal block height
+            const nextUnclaimed = unclaimedCount + 1;
+            const willSuspend = nextUnclaimed >= 24;
+
+            // Increment user's personal block height and tracking
             await storage.updateUser(user.id, {
-              personalBlockHeight: (user.personalBlockHeight || 0) + 1
+              personalBlockHeight: (user.personalBlockHeight || 0) + 1,
+              unclaimedBlocksCount: nextUnclaimed,
+              miningSuspended: willSuspend,
+              ...(willSuspend ? { suspensionAtBlock: totalBlockHeight } : {})
             });
           }
         }
       }
     }
     
-    console.log(`Block ${totalBlockHeight} generated successfully. Reward: ${currentBlockReward} B2B, Next block in 1 hour.`);
+    console.log(`Block ${totalBlockHeight} generated successfully. Reward: ${currentBlockReward} B2B. Hash: ${block.blockHash || 'generated'}. Next block in 1 hour.`);
+    return block;
     
   } catch (error) {
     console.error("Error generating block:", error);
@@ -249,16 +282,19 @@ function generateTxHash(): string {
   return hash;
 }
 
-// Export for testing purposes
+// Export for testing and admin triggering purposes
 export async function forceGenerateBlock() {
   if (!isProcessingBlock) {
     isProcessingBlock = true;
     try {
-      await generateAndDistributeBlock();
+      return await generateAndDistributeBlock();
     } catch (error) {
       console.error("Error in forced block generation:", error);
+      throw error;
     } finally {
       isProcessingBlock = false;
     }
+  } else {
+    throw new Error("Block generation already in progress");
   }
 }

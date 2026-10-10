@@ -13,7 +13,7 @@ type AuthContextType = {
   user: SelectUser | null;
   isLoading: boolean;
   error: Error | null;
-  loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
+  loginMutation: UseMutationResult<any, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<SelectUser & { accessKey: string }, Error, RegisterData>;
 };
@@ -21,6 +21,7 @@ type AuthContextType = {
 type LoginData = {
   username: string;
   accessKey: string;
+  twoFactorCode?: string;
 };
 
 type RegisterData = {
@@ -50,10 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const loginMutation = useMutation({
-    mutationFn: async ({ username, accessKey }: LoginData) => {
+    mutationFn: async ({ username, accessKey, twoFactorCode }: LoginData) => {
       const res = await apiRequest("POST", "/api/login", {
         username,
-        accessKey
+        accessKey,
+        twoFactorCode
       });
       
       if (!res.ok) {
@@ -69,7 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       return await res.json();
     },
-    onSuccess: (user: SelectUser) => {
+    onSuccess: (data: any) => {
+      if (data.require2FA) {
+        return; // UI will show 2FA prompt
+      }
+      const user = data as SelectUser;
       queryClient.setQueryData(["/api/user"], user);
       // Redirect based on user role
       if (user.isAdmin) {

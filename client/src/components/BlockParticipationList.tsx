@@ -152,20 +152,25 @@ export function BlockParticipationList({
     return `${month}-${day} ${hours}:${minutes}`;
   };
 
-  // Normalize block data from different backends
-  const normalizedBlocks = blocks.map(block => ({
+  // Normalize block data from different backends safely
+  const safeBlocks = Array.isArray(blocks) ? blocks : [];
+  const normalizedBlocks = safeBlocks.map(block => ({
     ...block,
-    blockHeight: block.blockHeight || block.blockNumber || 0,
-    userShare: block.userShare || block.reward || '0',
-    timestamp: block.timestamp || block.blockTime
+    blockHeight: block?.blockHeight || block?.blockNumber || 0,
+    userShare: block?.userShare || block?.reward || '0',
+    timestamp: block?.timestamp || block?.blockTime
   }));
 
   // Calculate total mined from blocks if not provided
   const calculatedTotalMined = normalizedBlocks.reduce((sum, block) => {
-    return sum + parseFloat(block.userShare);
+    const val = parseFloat(block.userShare || '0');
+    return sum + (isNaN(val) ? 0 : val);
   }, 0);
-  const displayTotalMined = totalMined !== "0" ? totalMined : calculatedTotalMined.toFixed(8);
-  const blockCount = participatedCount > 0 ? participatedCount : normalizedBlocks.length;
+  const parsedTotalMined = parseFloat(totalMined || '0');
+  const displayTotalMined = (!isNaN(parsedTotalMined) && parsedTotalMined > 0)
+    ? parsedTotalMined.toFixed(8) 
+    : calculatedTotalMined.toFixed(8);
+  const blockCount = (participatedCount && participatedCount > 0) ? participatedCount : normalizedBlocks.length;
 
   return (
     <div className="space-y-3">
@@ -233,16 +238,38 @@ export function BlockParticipationList({
       </div>
 
       {/* Suspension Warning Messages */}
+      {normalizedBlocks.length >= 20 && normalizedBlocks.length < 24 && (
+        <div 
+          className="rounded-lg p-3 text-xs font-medium animate-pulse"
+          style={{ 
+            backgroundColor: 'rgba(234, 88, 12, 0.12)',
+            border: '1px solid rgba(234, 88, 12, 0.4)' 
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <div>
+              <p style={{ color: '#fb923c', fontSize: '11px', fontWeight: 'bold' }}>
+                Suspension Warning: {normalizedBlocks.length}/24 unclaimed blocks ({24 - normalizedBlocks.length} left)!
+              </p>
+              <p style={{ color: '#fdba74', fontSize: '10px' }}>
+                Mining will automatically halt once you reach 24 unclaimed blocks. Click "Receive B2B" now!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {normalizedBlocks.length >= 24 && (
         <div 
           className="rounded-lg p-3 text-xs font-medium"
           style={{ 
-            backgroundColor: 'rgba(251, 146, 60, 0.08)',
-            border: '1px solid rgba(251, 146, 60, 0.2)' 
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.4)' 
           }}
         >
-          <p style={{ color: '#f7931a', fontSize: '11px' }}>
-            🚫 Mining suspended! You have reached 24 unclaimed blocks. Claim your rewards to resume mining.
+          <p style={{ color: '#f87171', fontSize: '11px', fontWeight: 'bold' }}>
+            🚫 Mining suspended! You have reached 24 unclaimed blocks. Click "Receive B2B" to collect rewards and resume mining.
           </p>
         </div>
       )}

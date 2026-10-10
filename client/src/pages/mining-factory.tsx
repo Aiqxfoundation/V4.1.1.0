@@ -354,14 +354,17 @@ function MiningFactory() {
 
   // Check for reduced motion preference
   const prefersReducedMotion = useMemo(() => 
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false
   , []);
 
   // Memoize expensive calculations
   const totalUnclaimedReward = useMemo(() => 
-    unclaimedBlocks?.reduce((sum: number, block: any) => 
-      sum + parseFloat(block.reward), 0
-    ) || 0
+    (unclaimedBlocks || []).reduce((sum: number, block: any) => {
+      const val = parseFloat(block?.reward || '0');
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0)
   , [unclaimedBlocks]);
 
   // Memoize unclaimed blocks list for better performance
@@ -382,6 +385,26 @@ function MiningFactory() {
       </div>
 
       <div className="mobile-content">
+        {/* Approaching Suspension Warning (>= 20 unclaimed blocks) */}
+        {memoizedUnclaimedBlocks.length >= 20 && memoizedUnclaimedBlocks.length < 24 && !isAccountSuspended && (
+          <Card className="mobile-card bg-orange-950/40 border-orange-500/80 mb-3 animate-pulse">
+            <div className="p-3 flex items-start space-x-3">
+              <AlertTriangle className="w-5 h-5 text-orange-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-xs font-bold text-orange-400 flex items-center justify-between">
+                  <span>SUSPENSION WARNING: {memoizedUnclaimedBlocks.length}/24 BLOCKS</span>
+                  <span className="text-[10px] text-orange-300 font-mono">
+                    {24 - memoizedUnclaimedBlocks.length} left
+                  </span>
+                </h3>
+                <p className="text-[11px] text-orange-200/90 mt-1 leading-snug">
+                  Mining automatically suspends when 24 blocks remain unclaimed. Scroll down to claim your rewards now to prevent suspension!
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Account Suspension Banner */}
         {isAccountSuspended && (
           <Card className="mobile-card bg-red-900/20 border-red-500 mb-3">

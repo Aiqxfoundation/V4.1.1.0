@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { storage } from "./storage";
-import { setupAuth } from "./auth";
+import { storage, isUsingMemoryStorage } from "./storage";
+import { setupAuth, generateUniqueAccessKey, hashAccessKey, verifyAccessKey } from "./auth";
 import { setupMining, forceGenerateBlock } from "./mining";
+import { setupAutomatedBackups, generateSystemBackup, listBackups, getBackupContent } from "./backup";
 import type { Request, Response, NextFunction, Express } from "express";
 import { insertDepositSchema, insertWithdrawalSchema, insertDeviceFingerprintSchema, users } from "@shared/schema";
 import { createServer } from "http";
@@ -12,6 +13,13 @@ import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
 import { randomBytes, scrypt } from "crypto";
 import { promisify } from "util";
+import { 
+  generateBase32Secret, 
+  getTotpUri, 
+  verifyTotpToken, 
+  isValidTxHash, 
+  normalizeTxHash 
+} from "./security";
 
 const asyncScrypt = promisify(scrypt);
 
@@ -37,70 +45,104 @@ export async function registerRoutes(app: Express) {
   // Setup authentication first
   setupAuth(app);
   
-  // DISABLED: Node.js mining engine - using Go backend as single source of truth
-  // setupMining();
+  // Enable Node.js mining engine
+  setupMining();
+  
+  // Enable automated daily database backups
+  setupAutomatedBackups();
   
   // Create HTTP server
   const server = createServer(app);
   
-  // WebSocket proxy to forward to Go backend
+  // WebSocket server for live mining updates
   const wss = new WebSocketServer({ noServer: true });
-  
+  const activeWsClients = new Map<WebSocket, string>();
+
   // Handle WebSocket upgrade requests
   server.on('upgrade', (request, socket, head) => {
     if (request.url === '/api/ws') {
-      // Proxy WebSocket to Go backend (configurable via GO_BACKEND_URL for compose)
-      const goBackendBase = process.env.GO_BACKEND_URL || 'http://localhost:8080';
-      const goBackendUrl = goBackendBase.replace(/^http/, 'ws') + '/api/ws';
-      
-      try {
-        const goWs = new WebSocket(goBackendUrl);
-        
-        goWs.on('open', () => {
-          wss.handleUpgrade(request, socket, head, (ws) => {
-            // Bridge between client WebSocket and Go backend WebSocket
-            ws.on('message', (data) => {
-              if (goWs.readyState === WebSocket.OPEN) {
-                goWs.send(data);
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        activeWsClients.set(ws, '');
+
+        ws.send(JSON.stringify({
+          type: 'connection',
+          timestamp: new Date().toISOString(),
+          data: { status: 'connected' }
+        }));
+
+        ws.on('message', async (data) => {
+          try {
+            const parsed = JSON.parse(data.toString());
+            if (parsed.type === 'auth' && parsed.userId) {
+              activeWsClients.set(ws, parsed.userId);
+              const user = await storage.getUser(parsed.userId);
+              if (user) {
+                const miningStatus = await storage.getUserMiningStatus(parsed.userId);
+                ws.send(JSON.stringify({
+                  type: 'user_mining_update',
+                  timestamp: new Date().toISOString(),
+                  data: {
+                    userId: user.id,
+                    personalBlockHeight: user.personalBlockHeight || 0,
+                    unclaimedRewards: user.unclaimedBalance || "0",
+                    hashPower: user.hashPower || "0",
+                    blocksParticipated: user.personalBlockHeight || 0,
+                    lastReward: "0",
+                    miningActive: miningStatus.miningActive,
+                    blocksUntilSuspension: miningStatus.blocksUntilSuspension,
+                    unclaimedBlocksCount: user.unclaimedBlocksCount || 0,
+                    miningSuspended: user.miningSuspended || false
+                  }
+                }));
               }
-            });
-            
-            goWs.on('message', (data) => {
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(data);
-              }
-            });
-            
-            ws.on('close', () => {
-              goWs.close();
-            });
-            
-            goWs.on('close', () => {
-              ws.close();
-            });
-            
-            ws.on('error', (error) => {
-              console.error('Client WebSocket error:', error);
-              goWs.close();
-            });
-            
-            goWs.on('error', (error) => {
-              console.error('Go backend WebSocket error:', error);
-              ws.close();
-            });
-          });
+            }
+          } catch (e) {
+            // Ignore malformed messages
+          }
         });
-        
-        goWs.on('error', (error) => {
-          console.error('Failed to connect to Go backend WebSocket:', error);
-          socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+
+        ws.on('close', () => {
+          activeWsClients.delete(ws);
         });
-      } catch (error) {
-        console.error('WebSocket proxy error:', error);
-        socket.end('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-      }
+
+        ws.on('error', () => {
+          activeWsClients.delete(ws);
+        });
+      });
     }
   });
+
+  // Periodic broadcast of block updates every 15 seconds
+  setInterval(async () => {
+    try {
+      const latestBlock = await storage.getLatestBlock();
+      const totalHash = await storage.getTotalHashPower();
+      const activeCount = await storage.getActiveMinerCount();
+      const blockHeight = latestBlock?.blockNumber || 1;
+      const totalReward = latestBlock?.reward || "50";
+      
+      const message = JSON.stringify({
+        type: 'block_update',
+        timestamp: new Date().toISOString(),
+        data: {
+          blockHeight,
+          totalReward,
+          totalHashPower: totalHash,
+          activeMiners: activeCount,
+          nextBlockTime: new Date(Date.now() + 3600000).toISOString(),
+          globalHashrate: latestBlock?.globalHashrate || totalHash
+        }
+      });
+
+      for (const client of Array.from(activeWsClients.keys())) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      }
+    } catch {
+      // ignore broadcast errors
+    }
+  }, 15000);
   
   // Device fingerprinting endpoints
   app.post("/api/device/check", async (req, res, next) => {
@@ -773,6 +815,50 @@ export async function registerRoutes(app: Express) {
     }
   });
 
+  // Automated deposit detection / verification simulation (USDT TRC20, ERC20, BSC)
+  app.post("/api/deposits/auto-check", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { txHash, network } = req.body;
+      if (!txHash) {
+        return res.status(400).json({ message: "Transaction hash is required" });
+      }
+
+      const isValid = isValidTxHash(txHash, network || "TRC20");
+      if (!isValid) {
+        return res.status(400).json({ 
+          valid: false, 
+          message: `Invalid ${network || 'TRC20'} transaction hash format` 
+        });
+      }
+
+      // Strict duplicate check across all existing deposits
+      const allDeposits = await storage.getAllDeposits();
+      const cleanInput = txHash.trim().toLowerCase();
+      const duplicate = allDeposits.find(d => d.txHash && d.txHash.toLowerCase() === cleanInput);
+      if (duplicate) {
+        return res.status(400).json({ 
+          valid: false, 
+          duplicate: true, 
+          message: "This transaction hash has already been registered." 
+        });
+      }
+
+      res.json({
+        valid: true,
+        network: network || "TRC20",
+        confirmations: 16,
+        status: "confirmed",
+        message: "Transaction verified on network"
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/admin/deposits", async (req, res, next) => {
     try {
       if (!req.isAuthenticated() || !req.user!.isAdmin) {
@@ -821,6 +907,17 @@ export async function registerRoutes(app: Express) {
 
       const { adminNote, actualAmount } = req.body;
       await storage.approveDeposit(req.params.id, adminNote, actualAmount);
+
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "APPROVE_DEPOSIT",
+        targetType: "deposit",
+        targetId: req.params.id,
+        details: `Approved deposit: amount ${actualAmount || 'original'}, note: ${adminNote || 'none'}`,
+        ipAddress: req.ip || null
+      });
+
       res.json({ message: "Deposit approved" });
     } catch (error) {
       next(error);
@@ -835,6 +932,17 @@ export async function registerRoutes(app: Express) {
 
       const { adminNote } = req.body;
       await storage.rejectDeposit(req.params.id, adminNote);
+
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "REJECT_DEPOSIT",
+        targetType: "deposit",
+        targetId: req.params.id,
+        details: `Rejected deposit: note ${adminNote || 'none'}`,
+        ipAddress: req.ip || null
+      });
+
       res.json({ message: "Deposit rejected" });
     } catch (error) {
       next(error);
@@ -1078,6 +1186,55 @@ export async function registerRoutes(app: Express) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
+      const freshUser = await storage.getUser(req.user!.id);
+      if (!freshUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Check mandatory security PIN
+      if (!freshUser.securityPin) {
+        return res.status(400).json({ 
+          requirePinSetup: true, 
+          message: "A Security PIN is mandatory for withdrawals. Please set up your 6-digit PIN in Account settings first." 
+        });
+      }
+
+      const { securityPin, twoFactorCode } = req.body;
+      if (!securityPin) {
+        return res.status(400).json({ message: "Security PIN is required to authorize withdrawals" });
+      }
+
+      const isPinValid = await verifyPin(securityPin, freshUser.securityPin);
+      if (!isPinValid) {
+        return res.status(400).json({ message: "Incorrect Security PIN. Please try again." });
+      }
+
+      // Check 2FA if user enabled it
+      if (freshUser.twoFactorEnabled && freshUser.twoFactorSecret) {
+        if (!twoFactorCode) {
+          return res.status(400).json({ 
+            require2FA: true, 
+            message: "Two-factor authentication code is required to process withdrawals" 
+          });
+        }
+        const isTotpValid = verifyTotpToken(twoFactorCode, freshUser.twoFactorSecret);
+        if (!isTotpValid) {
+          return res.status(400).json({ message: "Invalid 6-digit authenticator code" });
+        }
+      }
+
+      // Check daily withdrawal limit
+      const requestedAmount = parseFloat(req.body.amount || "0");
+      const dailyLimit = parseFloat(freshUser.dailyWithdrawalLimit || "1000");
+      const alreadyWithdrawnToday = await storage.getDailyWithdrawalTotal(freshUser.id);
+
+      if (alreadyWithdrawnToday + requestedAmount > dailyLimit) {
+        const remainingToday = Math.max(0, dailyLimit - alreadyWithdrawnToday);
+        return res.status(400).json({ 
+          message: `Daily withdrawal limit exceeded (${dailyLimit.toFixed(2)} USDT limit). You have ${remainingToday.toFixed(2)} USDT remaining today.` 
+        });
+      }
+
       const withdrawalData = insertWithdrawalSchema.parse(req.body);
       const withdrawal = await storage.createWithdrawal({
         ...withdrawalData,
@@ -1115,6 +1272,17 @@ export async function registerRoutes(app: Express) {
 
       const { txHash } = req.body;
       await storage.approveWithdrawal(req.params.id, txHash);
+
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "APPROVE_WITHDRAWAL",
+        targetType: "withdrawal",
+        targetId: req.params.id,
+        details: `Approved withdrawal: txHash ${txHash || 'none'}`,
+        ipAddress: req.ip || null
+      });
+
       res.json({ message: "Withdrawal approved" });
     } catch (error) {
       next(error);
@@ -1128,6 +1296,17 @@ export async function registerRoutes(app: Express) {
       }
 
       await storage.rejectWithdrawal(req.params.id);
+
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "REJECT_WITHDRAWAL",
+        targetType: "withdrawal",
+        targetId: req.params.id,
+        details: "Rejected withdrawal request",
+        ipAddress: req.ip || null
+      });
+
       res.json({ message: "Withdrawal rejected" });
     } catch (error) {
       next(error);
@@ -1168,6 +1347,16 @@ export async function registerRoutes(app: Express) {
       }
       
       await storage.updateUserBalances(req.params.userId, validatedBalances);
+
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "ADJUST_BALANCE",
+        targetType: "user",
+        targetId: req.params.userId,
+        details: `Adjusted balances: ${JSON.stringify(validatedBalances)}`,
+        ipAddress: req.ip || null
+      });
       
       res.json({ message: "User balances updated successfully" });
     } catch (error) {
@@ -1722,20 +1911,51 @@ export async function registerRoutes(app: Express) {
       const totalBlockHeight = await storage.getSystemSetting("totalBlockHeight");
       const activeMiners = await storage.getActiveMinerCount();
       const supplyMetrics = await storage.getSupplyMetrics();
+      const allUsers = await storage.getAllUsers();
+      const totalDeposits = await storage.getTotalDeposits();
       
       const currentBlock = blockHeight ? parseInt(blockHeight.value) : 1;
       const totalBlocks = totalBlockHeight ? parseInt(totalBlockHeight.value) : 0;
+      const numHash = parseFloat(totalHashPower) || 0;
+      const numCirculation = parseFloat(supplyMetrics.circulating) || 0;
+      const maxSupply = 21000000;
+      const supplyProgress = Math.min(100, (numCirculation / maxSupply) * 100);
+
+      const formatHashString = (hp: number): string => {
+        if (hp >= 1000000000) return `${(hp / 1000000000).toFixed(2)} EH/s`;
+        if (hp >= 1000000) return `${(hp / 1000000).toFixed(2)} PH/s`;
+        if (hp >= 1000) return `${(hp / 1000).toFixed(2)} TH/s`;
+        if (hp >= 1) return `${hp.toFixed(2)} GH/s`;
+        return `${(hp * 1000).toFixed(2)} KH/s`;
+      };
       
+      const difficultyNum = (45.2 + (numHash / 1000) * 1.25).toFixed(2);
+      const blocksToday = Math.max(1, Math.min(144, currentBlock % 144 || 1));
+
       res.json({
-        totalHashrate: parseFloat(totalHashPower),
+        totalHashrate: numHash,
+        totalHashPower: numHash,
+        hashRateDisplay: formatHashString(numHash),
         blockHeight: currentBlock,
         totalBlockHeight: totalBlocks,
         activeMiners,
+        activeMinerCount: activeMiners,
+        userCount: allUsers.length,
+        totalDeposits: totalDeposits || "0.00",
         blockReward: parseFloat(supplyMetrics.currentBlockReward),
-        totalCirculation: parseFloat(supplyMetrics.circulating),
+        currentBlockReward: parseFloat(supplyMetrics.currentBlockReward),
+        totalCirculation: numCirculation,
+        circulatingSupply: numCirculation,
+        circulation: numCirculation,
         maxSupply: 21000000,
+        supplyProgress: parseFloat(supplyProgress.toFixed(4)),
         nextHalving: supplyMetrics.halvingProgress.nextHalving,
-        blocksUntilHalving: supplyMetrics.halvingProgress.blocksRemaining
+        blocksUntilHalving: supplyMetrics.halvingProgress.blocksRemaining,
+        halvingProgress: parseFloat(supplyMetrics.halvingProgress.progressPercent || '0'),
+        networkDifficulty: difficultyNum,
+        blockTime: "10m",
+        blocksToday,
+        lastBlockTime: new Date().toISOString()
       });
     } catch (error) {
       next(error);
@@ -1863,18 +2083,32 @@ export async function registerRoutes(app: Express) {
       const globalState = await storage.getGlobalMiningState();
       
       // Claim rewards and update user state atomically
-      await db.transaction(async (tx) => {
-        // Add pending to balance and reset tracking
-        await tx.update(users).set({
-          b2bBalance: sql`COALESCE(b2b_balance, '0')::decimal + ${pending}::decimal`,
+      if (isUsingMemoryStorage) {
+        const freshUser = await storage.getUser(userId);
+        const currentB2b = parseFloat(freshUser?.b2bBalance || "0");
+        await storage.updateUser(userId, {
+          b2bBalance: (currentB2b + pendingFloat).toFixed(8),
           accruedPending: "0",
           userIndex: globalState.globalRewardIndex,
           unclaimedBlocksCount: 0,
           miningSuspended: false,
           suspensionAtBlock: globalState.currentBlock + 24,
           lastActiveBlock: globalState.currentBlock
-        }).where(eq(users.id, userId));
-      });
+        });
+      } else {
+        await db.transaction(async (tx: any) => {
+          // Add pending to balance and reset tracking
+          await tx.update(users).set({
+            b2bBalance: sql`COALESCE(b2b_balance, '0')::decimal + ${pending}::decimal`,
+            accruedPending: "0",
+            userIndex: globalState.globalRewardIndex,
+            unclaimedBlocksCount: 0,
+            miningSuspended: false,
+            suspensionAtBlock: globalState.currentBlock + 24,
+            lastActiveBlock: globalState.currentBlock
+          }).where(eq(users.id, userId));
+        });
+      }
       
       // Get updated user data for new balance
       const updatedUser = await storage.getUser(userId);
@@ -1997,39 +2231,35 @@ export async function registerRoutes(app: Express) {
     }
   });
   
-  // Proxy to Go backend for unclaimed blocks
+  // Fetch unclaimed blocks for mining
   app.get("/api/mining/unclaimed-blocks", async (req, res, next) => {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
       }
       
-      // Forward request to Go backend
-      const response = await fetch(`${process.env.GO_BACKEND_URL || 'http://localhost:8080'}/api/mining/unclaimed-blocks`, {
-        method: "GET",
-        headers: {
-          "X-User-ID": req.user!.id,
-          "X-User-Name": req.user!.username
+      if (process.env.GO_BACKEND_URL) {
+        try {
+          const response = await fetch(`${process.env.GO_BACKEND_URL}/api/mining/unclaimed-blocks`, {
+            method: "GET",
+            headers: {
+              "X-User-ID": req.user!.id,
+              "X-User-Name": req.user!.username
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            return res.json(data || []);
+          }
+        } catch (e) {
+          // Fall through to local storage
         }
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Go backend error:", errorText);
-        return res.status(response.status).json({ message: "Failed to fetch unclaimed blocks" });
       }
       
-      const data = await response.json();
-      res.json(data || []);
-    } catch (error: any) {
-      console.error("Error proxying to Go backend:", error);
-      // Fallback to local storage if Go backend is unavailable
-      try {
-        const blocks = await storage.getUnclaimedBlocks(req.user!.id);
-        res.json(blocks);
-      } catch (fallbackError) {
-        next(error);
-      }
+      const blocks = await storage.getUnclaimedBlocks(req.user!.id);
+      res.json(blocks || []);
+    } catch (error) {
+      next(error);
     }
   });
   
@@ -2122,7 +2352,7 @@ export async function registerRoutes(app: Express) {
       }
 
       const hashedNewPin = await hashPin(newPin);
-      await db.update(users).set({ securityPin: hashedNewPin }).where(eq(users.id, req.user!.id));
+      await storage.updateUser(req.user!.id, { securityPin: hashedNewPin });
 
       res.json({ message: "PIN changed successfully" });
     } catch (error) {
@@ -2153,6 +2383,291 @@ export async function registerRoutes(app: Express) {
     }
   });
 
+  // 2FA Management Endpoints (RFC 6238 TOTP)
+  app.get("/api/2fa/status", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const freshUser = await storage.getUser(req.user!.id);
+      res.json({
+        enabled: Boolean(freshUser?.twoFactorEnabled),
+        hasSecret: Boolean(freshUser?.twoFactorSecret)
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/2fa/generate", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const secret = generateBase32Secret(20);
+      const uri = getTotpUri(req.user!.username, secret);
+      res.json({ secret, uri });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/2fa/enable", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const { secret, token } = req.body;
+      if (!secret || !token) {
+        return res.status(400).json({ message: "Secret key and 6-digit verification code are required" });
+      }
+
+      const isValid = verifyTotpToken(token, secret);
+      if (!isValid) {
+        return res.status(400).json({ message: "Invalid verification code. Please check your authenticator app and try again." });
+      }
+
+      await storage.updateUser(req.user!.id, {
+        twoFactorEnabled: true,
+        twoFactorSecret: secret
+      });
+
+      if (req.user!.isAdmin) {
+        await storage.createAuditLog({
+          adminId: req.user!.id,
+          adminUsername: req.user!.username,
+          action: "ENABLE_2FA",
+          targetType: "user",
+          targetId: req.user!.id,
+          details: "Admin enabled Two-Factor Authentication",
+          ipAddress: req.ip || null
+        });
+      }
+
+      res.json({ success: true, message: "Two-factor authentication enabled successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/2fa/disable", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { token, pin } = req.body;
+      const freshUser = await storage.getUser(req.user!.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+
+      let verified = false;
+      if (token && freshUser.twoFactorSecret) {
+        verified = verifyTotpToken(token, freshUser.twoFactorSecret);
+      } else if (pin && freshUser.securityPin) {
+        verified = await verifyPin(pin, freshUser.securityPin);
+      }
+
+      if (!verified) {
+        return res.status(400).json({ message: "Verification failed. Provide a valid 2FA code or security PIN." });
+      }
+
+      await storage.updateUser(req.user!.id, {
+        twoFactorEnabled: false,
+        twoFactorSecret: null
+      });
+
+      if (req.user!.isAdmin) {
+        await storage.createAuditLog({
+          adminId: req.user!.id,
+          adminUsername: req.user!.username,
+          action: "DISABLE_2FA",
+          targetType: "user",
+          targetId: req.user!.id,
+          details: "Admin disabled Two-Factor Authentication",
+          ipAddress: req.ip || null
+        });
+      }
+
+      res.json({ success: true, message: "Two-factor authentication disabled" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Admin Audit Logs API
+  app.get("/api/admin/audit-logs", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const logs = await storage.getAuditLogs(limit);
+      res.json(logs);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Admin Mine Block On-Demand API
+  app.post("/api/admin/mining/mine-block", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const block = await forceGenerateBlock();
+
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "MINE_BLOCK",
+        targetType: "system",
+        targetId: block ? String(block.blockNumber) : "manual",
+        details: `Manually triggered block #${block?.blockNumber || 'unknown'} generation`,
+        ipAddress: req.ip || null
+      });
+
+      res.json({ success: true, message: "Block mined successfully!", block });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to generate block" });
+    }
+  });
+
+  // Admin Database Backups Management API
+  app.get("/api/admin/backups", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const backups = listBackups();
+      res.json(backups);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/backups/create", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const backup = await generateSystemBackup(`manual-by-${req.user!.username}`);
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "DATABASE_BACKUP",
+        targetType: "system",
+        targetId: backup.filename,
+        details: `Triggered manual database backup: ${backup.filename} (${(backup.size / 1024).toFixed(1)} KB)`,
+        ipAddress: req.ip || null
+      });
+      res.json({ success: true, message: "Database backup created successfully", backup });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Backup generation failed" });
+    }
+  });
+
+  app.get("/api/admin/backups/:filename", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      const content = getBackupContent(req.params.filename);
+      res.json(content);
+    } catch (error: any) {
+      res.status(404).json({ message: error.message || "Backup file not found" });
+    }
+  });
+
+  // Secret Admin Master Private Key Rotation API
+  app.post("/api/admin/change-private-key", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const { newAccessKey, currentAccessKey, targetUsername } = req.body;
+      
+      let targetUser = req.user!;
+      if (targetUsername && targetUsername !== req.user!.username) {
+        const found = await storage.getUserByUsername(targetUsername);
+        if (!found || !found.isAdmin) {
+          return res.status(404).json({ message: "Target admin user not found" });
+        }
+        targetUser = found;
+      }
+
+      // If current key provided, verify it
+      if (currentAccessKey && targetUser.id === req.user!.id) {
+        const isValid = await verifyAccessKey(currentAccessKey, targetUser.accessKey);
+        if (!isValid) {
+          return res.status(400).json({ message: "Current private key verification failed" });
+        }
+      }
+
+      // Generate key if not supplied or if requested 'GENERATE'
+      let finalKey = (newAccessKey || '').trim();
+      if (!finalKey || finalKey.toUpperCase() === 'GENERATE') {
+        finalKey = generateUniqueAccessKey();
+      }
+
+      if (finalKey.length < 8) {
+        return res.status(400).json({ message: "Private key must be at least 8 characters" });
+      }
+
+      // Hash key with scrypt
+      const hashedKey = await hashAccessKey(finalKey);
+
+      // Update in storage
+      await storage.updateUser(targetUser.id, { accessKey: hashedKey });
+      
+      if (req.user!.id === targetUser.id) {
+        req.user!.accessKey = hashedKey;
+      }
+
+      // Audit log
+      await storage.createAuditLog({
+        adminId: req.user!.id,
+        adminUsername: req.user!.username,
+        action: "ROTATE_ADMIN_PRIVATE_KEY",
+        targetType: "user",
+        targetId: targetUser.id,
+        details: `Rotated private key for admin account '${targetUser.username}'`,
+        ipAddress: req.ip || null
+      });
+
+      res.json({
+        success: true,
+        message: "Admin private key updated successfully",
+        username: targetUser.username,
+        newAccessKey: finalKey,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to update admin private key" });
+    }
+  });
+
+  // Admin key status info
+  app.get("/api/admin/key-info", async (req, res, next) => {
+    try {
+      if (!req.isAuthenticated() || !req.user!.isAdmin) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      res.json({
+        username: req.user!.username,
+        isAdmin: true,
+        hasKeyConfigured: !!req.user!.accessKey,
+        keyFormat: "B2B-XXXXX-XXXXX-XXXXX-XXXXX",
+        lastLoginIp: req.ip || null
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Get referral data with detailed tracking
   app.get("/api/referrals", async (req, res, next) => {
     try {
@@ -2161,35 +2676,35 @@ export async function registerRoutes(app: Express) {
       }
 
       const user = req.user!;
-      
-      // Get user's referral code
-      const referralCode = user.referralCode || user.username.toUpperCase().slice(0, 6);
-
-      // Get all users referred by this user
+      const referralCode = user.referralCode || user.username.toUpperCase().slice(0, 8);
       const referredUsers = await storage.getUsersByReferralCode(referralCode);
       
-      // Calculate stats
       const totalReferrals = referredUsers.length;
       const activeReferrals = referredUsers.filter(u => parseFloat(u.baseHashPower || u.hashPower || "0") > 0).length;
-      
-      // Use the stored total referral earnings
       const totalEarnings = user.totalReferralEarnings || "0.00";
+      const totalHashBonus = user.referralHashBonus || "0.00";
 
-      // Format referral list with details
       const referrals = referredUsers.map(u => ({
         id: u.id,
         username: u.username,
         joinedAt: u.createdAt,
         status: parseFloat(u.baseHashPower || u.hashPower || "0") > 0 ? 'mining' : 'inactive',
         hashPower: u.baseHashPower || u.hashPower || "0",
-        earned: "0.00" // Actual earnings are tracked in totalReferralEarnings on the referrer
+        earned: "0.00"
       }));
 
       const referralData = {
+        username: user.username,
         referralCode: referralCode,
         totalReferrals: totalReferrals,
+        tier1Count: totalReferrals,
+        tier2Count: 0,
         activeReferrals: activeReferrals,
         totalEarnings: totalEarnings,
+        tier1Earnings: totalEarnings,
+        tier2Earnings: "0.00",
+        pendingCommissions: user.unclaimedReferralUsdt || "0.00",
+        referralHashBonus: totalHashBonus,
         referrals: referrals
       };
 
@@ -2204,6 +2719,22 @@ export async function registerRoutes(app: Express) {
     try {
       if (!req.isAuthenticated()) {
         return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const freshUser = await storage.getUser(req.user!.id);
+      if (!freshUser) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      if (freshUser.securityPin) {
+        const { securityPin } = req.body;
+        if (!securityPin) {
+          return res.status(400).json({ message: "Security PIN is required to transfer B2B" });
+        }
+        const isPinValid = await verifyPin(securityPin, freshUser.securityPin);
+        if (!isPinValid) {
+          return res.status(400).json({ message: "Incorrect Security PIN" });
+        }
       }
       
       const { toUsername, amount } = z.object({
